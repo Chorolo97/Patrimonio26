@@ -141,7 +141,7 @@ window.createReel = async function (canvas, cfg) {
       return { ...f, unit: unitOf(f, kind), L, soft };
     });
     const atl = RV.buildFigureAtlas(list, cfg.light[pc.photo], pc.atlasS || 2);
-    const P = { ...pc, kind, figs: list, gdef, hasB: list.some((f) => f.group) };
+    const P = { ...pc, figs: list, gdef, hasB: list.some((f) => f.group) };
     P.figA = atl.A ? gl.texture(atl.A) : dummy; P.boxA = atl.boxA || [-1e5, -1e5, 1, 1];
     P.figB = atl.B ? gl.texture(atl.B) : dummy; P.boxB = atl.boxB || [-1e5, -1e5, 1, 1];
     P.gbox = [1, 2, 3, 4].map((g) => atl.groups[g] || [1e5, 1e5, -1e5, -1e5]);
@@ -149,8 +149,7 @@ window.createReel = async function (canvas, cfg) {
     prints[pc.id] = P;
   }
   const progs = {};
-  const progFor = (P) => progs[P.id] || (progs[P.id] = gl.program(RV.printSource({ kind: P.kind_, archive: !!P.archive, figB: P.hasB })));
-  for (const id in prints) prints[id].kind_ = prints[id].fxKind || id;
+  const progFor = (P) => progs[P.id] || (progs[P.id] = gl.program(RV.printSource({ kind: P.kind, archive: !!P.archive, figB: P.hasB })));
   const compProg = gl.program(RV.compositeSource());
 
   // ---------- secciones y relevos ----------
@@ -329,14 +328,21 @@ window.createReel = async function (canvas, cfg) {
     }
   }
   const devGroup = (P, g, t) => { const G0 = P.gdef[g]; if (!G0) return 1; return 1 - Math.exp(-Math.max(0, W(t) - W(G0.start) - (G0.induction != null ? G0.induction : dv.induction)) / G0.tau0); };
+  // recorrido de los grupos que caminan: tabla acumulada por cuadro con arranque y parada suaves (rampas de 1,4 s); nadie patina
+  for (const id in prints) {
+    const gd = prints[id].gdef;
+    for (const g in gd) if (gd[g].vel) {
+      const w = gd[g].walk || [gd[g].start, cfg.duration], rp = gd[g].ramp || 1.4, tab = new Float32Array(N + 2);
+      for (let k = 0; k <= N; k++) { const t = k / FPS, sp = PBS.smooth((t - w[0]) / rp) * PBS.smooth((w[1] - t) / rp); tab[k + 1] = tab[k] + sp / FPS; }
+      gd[g].tab = tab;
+    }
+  }
   const groupOffset = (P, g, t) => {
     const G0 = P.gdef[g]; if (!G0 || !G0.vel) return [0, 0];
-    const w = G0.walk || [G0.start, cfg.duration], tt = PBS.clamp(t, w[0], w[1]) - w[0];
-    // arranque y parada suaves (nadie patina): velocidad con rampas de 1,2 s
-    const rp = 1.2, dist = tt - rp * 0.5 * (1 - Math.min(1, Math.min(tt / rp, 1))) ;
-    const walkT = Math.max(0, tt - 0.6) - Math.max(0, tt - (w[1] - w[0]) + 0.6) * 0;
-    const bob = G0.bob ? G0.bob * Math.abs(Math.sin(Math.PI * (G0.step || 0.9) * tt)) * Math.min(1, tt / 1.2) : 0;
-    return [G0.vel[0] * walkT, G0.vel[1] * walkT - bob];
+    const f = PBS.clamp(t * FPS, 0, N), i = Math.floor(f), u = f - i, s = G0.tab[i] * (1 - u) + G0.tab[i + 1] * u;
+    const w = G0.walk || [G0.start, cfg.duration];
+    const bob = G0.bob ? G0.bob * Math.abs(Math.sin(Math.PI * (G0.step || 0.9) * (t - w[0]))) * PBS.smooth((t - w[0]) / 1.4) * PBS.smooth((w[1] - t) / 1.4) : 0;
+    return [G0.vel[0] * s, G0.vel[1] * s - bob];
   };
   const selAmt = (P, t) => { const k = P.sel; if (!k) return 0; if (t <= k[0][0]) return k[0][1]; const l = k[k.length - 1]; if (t >= l[0]) return l[1]; let i = 0; while (i < k.length - 2 && t > k[i + 1][0]) i++; return PBS.lerp(k[i][1], k[i + 1][1], PBS.smooth((t - k[i][0]) / (k[i + 1][0] - k[i][0]))); };
   const lin = (t, a, b) => PBS.clamp((t - a) / (b - a), 0, 1);

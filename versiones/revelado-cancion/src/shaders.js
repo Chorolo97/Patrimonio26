@@ -15,8 +15,9 @@ float vnI(vec2 x, uint seed){ vec2 i = floor(x), f = fract(x); f = f*f*(3.-2.*f)
   float a = hashI(k, seed), b = hashI(k+ivec2(1,0), seed), c = hashI(k+ivec2(0,1), seed), d = hashI(k+ivec2(1,1), seed);
   return mix(mix(a,b,f.x), mix(c,d,f.x), f.y); }
 const float LP = 0.955;
-uniform sampler2D uTone; // virado precalculado por cuadro: fila 0 copia viva, fila 1 archivo
-vec3 toneColor(float L, float arch){ return texture(uTone, vec2((clamp(L, 0., 1.)*255. + 0.5)/256., 0.25 + 0.5*arch)).rgb; }
+uniform sampler2D uTone; // virado precalculado por cuadro: fila 0 copia viva, fila 1 archivo, fila 2 selenio
+vec3 toneColor(float L, float arch){ return texture(uTone, vec2((clamp(L, 0., 1.)*255. + 0.5)/256., 1./6. + arch/3.)).rgb; }
+vec3 toneSel(float L){ return texture(uTone, vec2((clamp(L, 0., 1.)*255. + 0.5)/256., 5./6.)).rgb; }
 // grano de nucleación fijo (no cambia por cuadro): grumos de 2–3 px con un poco de hash fino
 float nucN(vec2 q, uint sd){ return 0.72*vnI(q*0.48, sd) + 0.28*hashI(ivec2(q*1.4), sd + 5u); }
 // valor de celda (Worley) F2−F1 para el encaje de espuma
@@ -99,7 +100,6 @@ in vec2 uv; out vec4 o;
 ${COMMON}
 uniform float uT, uS, uLow, uHigh, uRms, uSurge, uSwashPhase, uGrottoPhase, uIsOld;
 uniform vec4 uOn;       // último arranque (t, índice), anterior (t, índice)
-uniform vec4 uCam;      // reservado
 ${FRONT}
 uniform sampler2D uPhoto, uMask, uFigA, uFigB;
 uniform vec4 geo, geo2, boxA, boxB, grp, gcw, gb1, gb2, gb3, gb4, go1, go2, go3, go4, par, par2;
@@ -137,7 +137,6 @@ float popFoam(vec2 q, float tO, float idx, float amp, float cellPx){
   float lace = 0.55 + 0.45*smoothstep(0.35, 0.7, vnI(q*0.18 + vec2(aa*2., 0.), 37u));
   return body * lace * (1. - smoothstep(0.55, 1.6, aa));
 }
-vec2 sway(vec2 q, float live){ return vec2(0.); }
 
 PR shade(vec2 p, float dev, float devFig){
   PR r; r.Dbg = 0.; r.Df = 0.; r.c = 0.; r.foam = 0.; r.arch = 0.;
@@ -561,7 +560,7 @@ precision highp sampler2D;
 in vec2 uv; out vec4 o;
 ${COMMON}
 ${FRONT}
-uniform float uT, uFrame, uSurge, uDual, uBArch, uSink, uRms;
+uniform float uT, uFrame, uSurge, uDual, uBArch, uSink, uRms, uSelB, uSelA;
 uniform sampler2D uGrain, uPB, uPA;
 uniform vec2 uGOff;
 uniform vec4 uBurn, uBurn2;     // progreso, yFull, yZero, densidad | fase del borde, amplitud del borde, pluma
@@ -574,11 +573,13 @@ void main(){
   vec4 gt = texelFetch(uGrain, (ivec2(p) + ivec2(uGOff)) & 1023, 0);
   vec4 B = texelFetch(uPB, ip, 0);
   float Dbg = B.r, Df = B.g, figC = B.b, foam = uBArch > 0.5 ? 0. : B.a, arch = uBArch > 0.5 ? B.a : 0.;
+  float selw = uSelB;
   if (uDual > 0.5) {
     vec4 A = texelFetch(uPA, ip, 0);
     if (uMen4.x > 0.5) {
       // laboratorio: la vieja se sumerge (densidad → papel mojado) y la nueva sube desde el blanco
       float keep = step(nucN(p, 41u), 1. - uSink);
+      selw = mix(uSelA, uSelB, step(0.99, uSink));
       Dbg = Dbg + A.r * (1. - uSink);
       float cA = A.b * keep;
       float D0 = mix(Dbg, mix(Df, A.g, cA), max(figC, cA));
@@ -587,6 +588,7 @@ void main(){
       // relevo llevado por el frente: delante sólo la copia vieja; en la banda de lavado se disuelve; detrás sólo la nueva
       float wA = 1. - smoothstep(0., 64., er);
       float wF = 1. - smoothstep(0., 70., er);
+      selw = mix(uSelB, uSelA, wA);
       float cB = figC;
       if (er <= 0.) { Dbg = 0.; Df = 0.; cB = 0.; foam = 0.; arch = 0.; }
       float cA = 0., DfA = 0.;
@@ -648,6 +650,7 @@ void main(){
     L = (L + (L - 0.5)*0.14*wb*midL) * (1. - 0.07*wb) + gl;
   }
   vec3 col = toneColor(clamp(L, 0., 1.), archAmt);
+  if (selw > 0.001) col = mix(col, toneSel(clamp(L, 0., 1.)), selw);
   // plateado: brillo frío en las zonas densas junto a los bordes (sólo archivo)
   if (archAmt > 0.) {
     vec2 e2 = min(p, vec2(1080., 1920.) - p);
