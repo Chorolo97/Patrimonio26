@@ -104,7 +104,7 @@ vec4 terrain(vec2 p){
   float Ww = mix(${f(Wd.Ww[0])}, ${f(Wd.Ww[1])}, vnoise(vec2(s/160., 7.3)));
   float We = mix(${f(Wd.We[0])}, ${f(Wd.We[1])}, vnoise(vec2(s/300., 2.1))) * (0.28+0.72*smoothstep(4., 50., hc));
   float frac = (fbm(p/16.)-0.5)*0.26 + (vnoise(p/4.5)-0.5)*0.10;
-  float hr, rock = 0., u = 0.;
+  float hr, rock = 0., u = 0., eastRel = 0.;
   if(d < 0.){
     u = -d/Ww + frac;
     hr = hc*(1.-smoothstep(0.35,1.0,u)) - max(u-1.,0.)*Ww*0.35;
@@ -126,14 +126,16 @@ vec4 terrain(vec2 p){
     float band = smoothstep(0.06,0.25,u)*(1.-smoothstep(0.8,1.0,u));
     float und = fbm(vec2(xe/26., s/150.)+3.3)-0.5;
     float hum = fbm(p/38.+7.7)-0.5;
-    hr += band*(und*5.5 + hum*3.0)*clamp(hc/40.,0.3,1.2);
+    hr += band*(und*2.6 + hum*1.5)*clamp(hc/40.,0.3,1.2);
+    eastRel = band*max(und*2.6 + hum*1.5, 0.)*clamp(hc/40.,0.3,1.2);
   }
   // bolas y afloramientos de granito
   float kn = ridged(p/10.5+vec2(4.2,1.1));
   float kCrest = (1.-smoothstep(4.,12.,abs(d+27.)))*step(8.,hc)*smoothstep(0.45,0.6,vnoise(p/40.+2.));
   float kWall = d<0. ? smoothstep(0.25,0.5,u)*(1.-smoothstep(0.95,1.1,u)) : 0.;
   float kEast = d>0. ? smoothstep(0.76,0.84,vnoise(p/65.+9.))*smoothstep(0.1,0.25,u)*(1.-smoothstep(0.85,1.,u)) : 0.;
-  float knob = (kCrest*3.5 + kWall*6. + kEast*3.)*pow(kn,2.6);
+  float knob = (kCrest*3.5 + kWall*6. + kEast*1.2)*pow(kn,2.6);
+  float noHz = kEast*1.2*pow(kn,2.6);   // relieve menor de la ladera este: no proyecta sombras largas (manchas negras al alba)
   hr += knob*step(0.,hr+2.);
   rock = max(rock, smoothstep(0.7,1.8,knob));
   // loma granítica (S4): meseta baja alargada N–S
@@ -149,7 +151,8 @@ vec4 terrain(vec2 p){
   float sdP = min(min(sdW,sdE),sdN);
   float hp = sdP<0. ? max(sdP*0.035,-15.) : min(sdP,60.)*0.045 + max(sdP-60.,0.)*0.035;
   hp += smoothstep(40.,260.,sdP)*((fbm(p/110.)-0.5)*5.);
-  hp += smoothstep(1650.,2250.,p.y)*smoothstep(0.,200.,sdP)*(5.+22.*fbm(p/380.+3.));
+  float lomaRel = smoothstep(1650.,2250.,p.y)*smoothstep(0.,200.,sdP)*(4.+15.*fbm(p/380.+3.));
+  hp += lomaRel;
   hr = mix(hr, hr*0.55 - 8., smoothstep(2200., 2700., p.y));
   float h = smaxk(hr, hp, 8.);
   // plataforma de la punta
@@ -173,8 +176,31 @@ vec4 terrain(vec2 p){
                    beachMask(p, ${v2(be.a)}, ${v2(be.b)}, vec2(${f(be.width[0])},${f(be.width[1])}), sdE));
   sand *= smoothstep(4.5, 2.0, h) * step(hr, hp+1.);
   rock *= 1.-sand;
-  return vec4(h, clamp(rock,0.,1.), sand, hk*step(0.,h));
+  float lomaW = smoothstep(-4., 4., hp - hr);   // donde manda la loma, su relieve no proyecta sombras largas sobre la sierra
+  return vec4(h, clamp(rock,0.,1.), sand, (hk + noHz*step(0.,hr+2.) + eastRel + lomaRel*lomaW)*step(0.,h));
 }`;
+  };
+
+  // ---------- diaclasas maestras del granito (compartidas por el horneado de S8 y el sombreador) ----------
+  // Dos juegos casi ortogonales, líneas levemente onduladas, espaciado 6–12 m, con cortes a lo largo.
+  LR.glslJoints = function (cfg) {
+    const J = cfg.world.joints, r = (a) => a * Math.PI / 180;
+    const dA = [Math.sin(r(J.azA)), Math.cos(r(J.azA))], dB = [Math.sin(r(J.azB)), Math.cos(r(J.azB))];
+    return `
+vec2 jSet(vec2 P, vec2 d, float S, float seed){
+  vec2 n = vec2(d.y, -d.x);
+  float w = (vnoise(P/23.+seed)-0.5)*6. + (vnoise(P/6.3+seed*2.3)-0.5)*1.1 + (vnoise(P/1.7+seed*4.1)-0.5)*0.22;
+  float u = dot(P, n) + w, al = dot(P, d);
+  float k = floor(u/S); float best = 1e3, side = 1.;
+  for(int i=-1;i<=1;i++){ float kk = k+float(i); float x = (kk+0.5+${f(J.jitter)}*(hash21(vec2(kk,seed))-0.5))*S;
+    float on = smoothstep(${f(J.gaps)}-0.08, ${f(J.gaps)}+0.08, vnoise(vec2(al/8.5 + kk*1.7, kk*3.7+seed)));
+    float dd = abs(u-x) + (1.-on)*2.5;
+    if(dd < best){ best = dd; side = u > x ? 1. : -1.; } }
+  return vec2(best, side*dot(n, vec2(${f(-Math.sin(r(cfg.sun.azimuth)))}, ${f(-Math.cos(r(cfg.sun.azimuth)))})));
+}
+// x: distancia a la diaclasa maestra más cercana (m); y: > 0 del lado opuesto al sol (labio iluminado)
+vec2 masterJ(vec2 P){ vec2 a = jSet(P, vec2(${f(dA[0])},${f(dA[1])}), ${f(J.S)}, 3.1), b = jSet(P, vec2(${f(dB[0])},${f(dB[1])}), ${f(J.S * 2.1)}, 7.7); b.x += 0.02 + 2.5*smoothstep(0.3, 0.5, vnoise(P/13.+2.2)); return a.x < b.x ? a : b; }
+`;
   };
 
   // ---------- pases de horneado ----------
@@ -280,7 +306,7 @@ void main(){ vec2 p = ext.xy + uv*ext.z; float h0 = hh(uv) + lift;
 
     // 5) punta local 1024² (0.156 m/texel): bolas, pozas, juntas suaves
     const NTp = TB.res, cellT = TB.size / NTp;
-    const rocks = extra.rocks || []; // [x,y,r,h] rocas explícitas
+    const rocks = []; // (las rocas explícitas de S8 van en el horneado de la punta fina)
     const rockArr = []; for (let i = 0; i < 4; i++) { const r = rocks[i] || [0, 0, 0, 0]; rockArr.push(`vec4(${r.map(f).join(',')})`); }
     const pTip = G.program(HEAD + TER + `
 uniform sampler2D TB; uniform vec4 ext, bext;
@@ -343,6 +369,102 @@ void main(){ float hx = hA(uv+vec2(px,0.)) - hA(uv-vec2(px,0.)); float hy = hA(u
     const hzTip = LR.read(G, tTipHzT);
     const bakeTip = LR.read(G, tTipT);
     tt = tick('tip', tt);
+
+    // 4b) densidad de monte (zonas de config + manchas raras) en 512² sobre el horneado grande: una lectura en vez de 9 exponenciales
+    const MZ = Wd.monte;
+    const pMonte = G.program(HEAD + `
+uniform vec4 ext;
+const vec4 MZ[${MZ.length}] = vec4[${MZ.length}](${MZ.map((z) => `vec4(${f(z[0])},${f(z[1])},${f(z[2])},${f(z[3])})`).join(',')});
+const float MZD[${MZ.length}] = float[${MZ.length}](${MZ.map((z) => f(z[4])).join(',')});
+void main(){ vec2 P = ext.xy + uv*ext.z; float d = 0.05*smoothstep(0.62, 0.8, vnoise(P/70.+4.2));
+  for(int i=0;i<${MZ.length};i++){ vec2 q = (P-MZ[i].xy)/MZ[i].zw; d = max(d, MZD[i]*exp(-dot(q,q)*1.6)); }
+  o = vec4(d*2., 0., 0., 1.); }`);
+    const tMonT = LR.target(G, 512, 512, { fmt: 'u8' });
+    G.draw(pMonte, { ext: [BG.x0, BG.y0, BG.size, 0] }, tMonT);
+
+    // 5a) diaclasas maestras horneadas para S7 (0.156 m/texel sobre la punta y el paredón): una lectura en vez de ~11 ruidos
+    const pJ = G.program(HEAD + LR.glslJoints(cfg) + `
+uniform vec4 ext; uniform float cell;
+vec2 hash22(vec2 p){ return vec2(hash21(p), hash21(p+19.19)); }
+vec2 vorEdge(vec2 x){
+  vec2 n = floor(x), f = fract(x); vec2 mg, mr; float md = 8.; float eh = 0.;
+  for(int j=-1;j<=1;j++) for(int i=-1;i<=1;i++){ vec2 g = vec2(i,j); vec2 r = g + 0.15 + 0.7*hash22(n+g) - f; float d = dot(r,r); if(d<md){ md=d; mr=r; mg=g; } }
+  md = 8.;
+  for(int j=-2;j<=2;j++) for(int i=-2;i<=2;i++){ vec2 g = mg + vec2(i,j); vec2 r = g + 0.15 + 0.7*hash22(n+g) - f;
+    vec2 dr = r-mr; if(dot(dr,dr)>0.0001){ float d = dot(0.5*(mr+r), normalize(dr)); if(d<md){ md=d; eh = hash21(2.*n+mg+g+0.37); } } }
+  return vec2(md, eh);
+}
+vec2 jointDomain(vec2 P){ vec2 w = vec2(vnoise(P/7.1), vnoise(P/7.1+5.2))-0.5; vec2 q = P + w*2.4*cell/3.; return vec2(dot(q, vec2(0.94,0.34)), dot(q, vec2(-0.34,0.94))*1.2)/cell; }
+// x,y: diaclasas maestras; z: distancia a la red secundaria (m, aprox.); w: azar del borde
+void main(){ vec2 p = ext.xy + uv*vec2(ext.z, ext.w); vec2 v = vorEdge(jointDomain(p)); o = vec4(masterJ(p), v.x*cell, v.y); }`);
+    const JX = [-40, -140, 160, 320];
+    const tJT = LR.target(G, 1024, 2048, { fmt: 'f16' });
+    G.draw(pJ, { ext: JX, cell: 5.4 }, tJT);
+    tt = tick('joints', tt);
+
+    // 5b) S8: granito de la punta a 2.6 cm/texel. Costa casi horizontal en el cuadro, bloques almohadillados
+    //     entre diaclasas maestras, bolas redondeadas (unión suave), pozas de marea y la roca-asiento.
+    let cap = null;
+    if (Wd.cap) {
+      const CP = Wd.cap, NC = CP.res, cellC = CP.size / NC;
+      const plArr = []; for (let i = 0; i < 4; i++) { const q = CP.pools[i] || [0, 0, 0, 0, 0]; plArr.push(`vec4(${q.slice(0, 4).map(f).join(',')})`); }
+      const plAng = []; for (let i = 0; i < 4; i++) plAng.push(f((CP.pools[i] || [0, 0, 0, 0, 0])[4]));
+      const rkArr = []; for (let i = 0; i < 4; i++) { const r = (extra.capRocks || [])[i] || [0, 0, 0, 0]; rkArr.push(`vec4(${r.map(f).join(',')})`); }
+      const pCap = G.program(HEAD + LR.glslJoints(cfg) + `
+uniform vec4 ext;
+const vec4 PL[4] = vec4[4](${plArr.join(',')}); const float PLA[4] = float[4](${plAng.join(',')});
+const vec4 RK[4] = vec4[4](${rkArr.join(',')});
+float blobH(vec2 p){
+  float hmax = 0.; vec2 c0 = floor(p/2.9);
+  for(int j=-1;j<=1;j++) for(int i=-1;i<=1;i++){ vec2 c = c0+vec2(i,j);
+    if(hash21(c*1.37+3.1) > 0.35) continue;
+    vec2 ctr = (c + 0.2 + 0.6*vec2(hash21(c+5.7), hash21(c+8.9)))*2.9;
+    float rad = 0.9 + 1.3*hash21(c+11.3); float hb = 0.06 + 0.16*hash21(c+9.1);
+    vec2 q = p - ctr; float ang = hash21(c+2.2)*6.283; q = mat2(cos(ang),-sin(ang),sin(ang),cos(ang))*q; q.x *= 0.75+0.5*hash21(c+4.4);
+    float dd = length(q)/rad + (fbm(p/0.9+c)-0.5)*0.25;
+    hmax = max(hmax, hb*pow(max(1.-dd*dd, 0.), 1.6)); }
+  return hmax;
+}
+void main(){ vec2 p = ext.xy + uv*ext.z;
+  vec2 J = masterJ(p); float jm = J.x;
+  float yc = ${f(CP.coastY)} + (fbm(vec2(p.x/6.5, 3.1))-0.5)*3.0 + (fbm(vec2(p.x/1.9, 7.7))-0.5)*0.9;
+  float dn0 = p.y - yc;
+  // la costa entra en las diaclasas (caletas angostas donde una junta llega al mar)
+  float dn = dn0 + (fbm(p/1.4)-0.5)*0.7 + (vnoise(p/0.3)-0.5)*0.07 - 1.1*(1.-smoothstep(0.,1.0,jm))*(1.-smoothstep(0.,5.,dn0));
+  float plat = 0.7*(1.-exp(-max(dn,0.)/2.4)) + 0.03*max(dn,0.) + (fbm(p/8.)-0.5)*0.3*smoothstep(0.,3.,dn);
+  float pillow = 0.12*smoothstep(0.02, 1.5, jm);
+  float h = plat + pillow*smoothstep(-0.4, 1.4, dn) + blobH(p)*smoothstep(0.6, 2.6, dn);
+  for(int k=0;k<4;k++){ if(RK[k].z<=0.) continue; vec2 q = p-RK[k].xy; float dd = length(q)/RK[k].z + (fbm(p/0.7+float(k)*3.)-0.5)*0.2;
+    h = max(h, plat + RK[k].w*pow(max(1.-dd*dd,0.), 0.6)); }
+  if(dn < 0.) h = min(h, 0.03) + dn*0.3 - 0.02;
+  float pool = 0.;
+  for(int k=0;k<4;k++){ if(PL[k].z<=0.) continue; vec2 q = p-PL[k].xy; float a = PLA[k]; q = mat2(cos(a),-sin(a),sin(a),cos(a))*q;
+    float dd = length(q/PL[k].zw) + (fbm(p/0.55+float(k)*5.)-0.5)*0.35;
+    h -= 0.2*smoothstep(1.15, 0.55, dd); pool = max(pool, smoothstep(1.02, 0.9, dd)); }
+  o = vec4(h, step(0., h), pool, jm); }`);
+      const capExt = [CP.x0, CP.y0, CP.size, 0];
+      const TC0 = LR.target(G, NC, NC, { fmt: 'f32' });
+      G.draw(pCap, { ext: capExt }, TC0);
+      const craw = LR.read(G, TC0);
+      const cland = new Uint8Array(NC * NC); for (let i = 0; i < NC * NC; i++) cland[i] = craw[i * 4] > 0 ? 1 : 0;
+      const ccoast = LR.signedCoast(cland, NC, NC, cellC);
+      const tCapC = LR.tex(G, NC, NC, { fmt: 'f32', data: ccoast });
+      const pCapC = G.program(HEAD + `uniform sampler2D A, C; uniform float px; void main(){ vec4 a = texture(A, uv); float c = 0.;
+  for(int j=-2;j<=2;j++) for(int i=-2;i<=2;i++){ float w = (3.-abs(float(i)))*(3.-abs(float(j))); c += w*texture(C, uv+vec2(float(i),float(j))*px).r; }
+  o = vec4(a.r, a.g, a.b, c/81.); }`);
+      const tCapT = LR.target(G, NC, NC, { fmt: 'f32' });
+      G.draw(pCapC, { A: TC0.tex, C: tCapC, px: 1 / NC }, tCapT);
+      const tCapNT = LR.target(G, NC, NC, { fmt: 'f16' });
+      G.draw(pTipN, { TB: tCapT.tex, px: 1 / NC, cell: cellC }, tCapNT);
+      const tCapHzT = LR.target(G, NC, NC, { fmt: 'f32' });
+      G.draw(pHz, { TB: tCapT.tex, ext: capExt, dir: toSun, steps: 64, s0: 0.03, s1: 14, lift: 0.01, sub: 0 }, tCapHzT);
+      // diaclasas maestras horneadas (x: distancia, y: lado) para S8
+      const tCapJT = LR.target(G, NC, NC, { fmt: 'f16' });
+      const capJX = [CP.x0, CP.y0, CP.size, CP.size];
+      G.draw(pJ, { ext: capJX, cell: cfg.lace.cell }, tCapJT);
+      cap = { jt: tCapJT.tex, jx: capJX, tex: tCapT.tex, norm: tCapNT.tex, hz: tCapHzT.tex, data: LR.read(G, tCapT), hzData: LR.read(G, tCapHzT), N: NC, x0: CP.x0, y0: CP.y0, size: CP.size };
+      tt = tick('cap', tt);
+    }
 
     // 6) textura de detalle 512² (R matas, G ruido medio, B grano fino, A ruido de ondas de arena)
     const PER = `
@@ -420,6 +542,7 @@ void main(){ vec2 x = uv*16.; vec2 n = floor(x), f = fract(x); vec2 mg, mr; floa
 
     return {
       big: { tex: tBakeT.tex, norm: tNormT.tex, hz: tHzT.tex, data: bakeBig, hzData: hzBig, N, NH, x0: BG.x0, y0: BG.y0, size: BG.size },
+      cap, joints: { tex: tJT.tex, ext: JX }, monte: tMonT.tex,
       tip: { tex: tTipT.tex, norm: tTipNT.tex, hz: tTipHzT.tex, data: bakeTip, hzData: hzTip, N: NTp, x0: tipExt[0], y0: tipExt[1], size: TB.size },
       det: tDetT.tex, wave: tWaveT.tex, vor: tVorT.tex, timings, ms: Math.round(performance.now() - t0),
     };
@@ -461,5 +584,81 @@ void main(){ vec2 x = uv*16.; vec2 n = floor(x), f = fract(x); vec2 mg, mr; floa
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.MIRRORED_REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.MIRRORED_REPEAT);
     LR.mip(G, t);
     return t;
+  };
+})();
+
+/* S4: la loma — bolas de granito horneadas en el mundo (albedo, normal, altura y sombra propia fija).
+   El sombreador de mundo las lee con dos texturas: mucho más barato que dibujarlas como objetos en cada cuadro. */
+(function () {
+  const LR = window.LR;
+  const f = (v) => { const s = String(+(+v).toFixed(6)); return s.includes('.') || s.includes('e') ? s : s + '.0'; };
+  LR.bakeKnoll = function (G, cfg, list, SC) {
+    const vis = list.filter((b) => !b.hidden);
+    if (!vis.length) return null;
+    let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+    for (const b of vis) {
+      const L = b.L(99), ex = [b.p[0] + SC.sDir[0] * (L + b.r), b.p[1] + SC.sDir[1] * (L + b.r)];
+      for (const q of [b.p, ex]) { x0 = Math.min(x0, q[0] - b.r * 1.5 - 1.5); x1 = Math.max(x1, q[0] + b.r * 1.5 + 0.5); y0 = Math.min(y0, q[1] - b.r * 1.5 - 1); y1 = Math.max(y1, q[1] + b.r * 1.5 + 1); }
+    }
+    const res = 0.02, W = Math.ceil((x1 - x0) / res), H = Math.ceil((y1 - y0) / res);
+    const P = cfg.palette, lin = (k) => `vec3(${LR.lin(P[k]).map(f).join(',')})`;
+    const az = cfg.sun.azimuth * Math.PI / 180, toSun = [Math.sin(az), Math.cos(az)], sD = [-toSun[0], -toSun[1]], pp = [-sD[1], sD[0]];
+    const B1 = vis.map((b) => `vec4(${f(b.p[0])},${f(b.p[1])},${f(b.r)},${f(b.hb)})`).join(',');
+    const B2 = vis.map((b) => `vec4(${f(b.L(99))},${f(b.seed)},${f(b.asp)},${f(b.ang)})`).join(',');
+    const N = vis.length;
+    const HEAD = `#version 300 es\nprecision highp float; precision highp sampler2D; in vec2 uv; layout(location=0) out vec4 o;\n${PBS.GLSL_NOISE}\n\n// ruido con hash entero: estable para coordenadas grandes (el hash de PBS pierde precisión con |p|·456 > ~1e5)\nfloat hashI(vec2 p){ uvec2 q = uvec2(ivec2(floor(p))) * uvec2(1597334677u, 3812015801u); uint n = (q.x ^ q.y) * 1597334677u; n ^= n >> 16; n *= 2246822519u; n ^= n >> 13; return float(n) * (1.0/4294967296.0); }\nfloat vnI(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.-2.*f); return mix(mix(hashI(i), hashI(i+vec2(1,0)), f.x), mix(hashI(i+vec2(0,1)), hashI(i+vec2(1,1)), f.x), f.y); }\n`;
+    const COMMON = `
+const vec4 KB1[${N}] = vec4[${N}](${B1}); const vec4 KB2[${N}] = vec4[${N}](${B2});
+const vec2 SDIR = vec2(${f(sD[0])},${f(sD[1])}), SPERP = vec2(${f(pp[0])},${f(pp[1])});
+uniform vec4 ext;
+float h1(float i){ return fract(sin(i*127.1 + 3.7)*43758.5453); }
+float n1(float x){ float i = floor(x), f = fract(x); f = f*f*(3.-2.*f); return mix(h1(i), h1(i+1.), f); }
+// devuelve (z, cov, nx, ny) de la bola más alta en p
+vec4 bodyAt(vec2 P, out vec3 alb){
+  float best = -1.; vec4 R = vec4(0.); alb = vec3(0.);
+  for(int k=0;k<${N};k++){
+    vec2 cc = KB1[k].xy; float r = KB1[k].z, hb = KB1[k].w, sd0 = KB2[k].y, asp = KB2[k].z, ang = KB2[k].w;
+    vec2 rel = P - cc; vec2 qr = mat2(cos(ang), -sin(ang), sin(ang), cos(ang))*rel; qr /= vec2(asp, 1./asp);
+    float dn = length(qr)/r; if(dn > 1.4) continue;
+    mat2 R1 = mat2(0.8,-0.6,0.6,0.8), R2 = mat2(0.28,0.96,-0.96,0.28);
+    float d = dn + (vnI(R1*P*2.6/r + sd0)-0.5)*0.26 + (vnI(R2*P*7./r + sd0*2.)-0.5)*0.09 + (vnI(R1*P*30.)-0.5)*0.03;
+    float cov = smoothstep(1.02, 0.98, d);
+    float dd = min(d, 1.); float z = pow(max(1.-dd*dd, 0.), 0.55);
+    float zh = cov > 0. ? z*hb : -0.5 + (1.4 - d);   // fuera del cuerpo: igual guarda el albedo más cercano (sin borde oscuro al filtrar)
+    if(zh < best) continue; best = zh;
+    vec2 g = normalize(rel + 1e-4)*dd/max(z, 0.08);
+    float fn = vnI(R2*P*2.2/r+sd0), fm = vnI(R1*P*6.3+sd0);
+    vec2 facet = (vec2(fn, vnI(R1*P*2.2/r+sd0+5.))-0.5)*0.5 + (vec2(fm, vnI(R2*P*6.3+sd0+3.))-0.5)*0.12;
+    vec2 nxy = g*min(hb/r, 1.4)*0.55 + facet;
+    float gr = vnI(R1*P*2.1)*0.5 + fm*0.25 + vnI(R2*P*23.)*0.25;
+    vec3 a = mix(${lin('graniteA')}, ${lin('graniteC')}, smoothstep(0.15, 0.85, gr + 0.25*z))*0.85;
+    float lich = smoothstep(0.58, 0.78, fn*0.6 + gr*0.4)*smoothstep(0.1, 0.5, z);
+    a = mix(a, mix(${lin('lichenA')}, ${lin('lichenB')}, gr), lich*0.3);
+    a *= 0.85 + 0.3*hashI(floor(P/0.025));
+    alb = a; R = vec4(z*step(0.001, cov), cov, nxy);
+  }
+  return R;
+}
+float shadowAt(vec2 P){
+  float occ = 0.;
+  for(int k=0;k<${N};k++){
+    vec2 cc = KB1[k].xy; float r = KB1[k].z, Lsh = KB2[k].x, sd0 = KB2[k].y;
+    vec2 rel = P - cc; float a_ = dot(rel, SDIR), b_ = dot(rel, SPERP);
+    if(a_ < -0.15*r || abs(b_) > r*1.2 || a_ > r + Lsh + 1.) continue;   // la sombra arranca bajo el cuerpo, no al este
+    float R = r*(0.96 + (n1(b_*1.5/r + sd0)-0.5)*0.22)*(1. - 0.12*smoothstep(0., r + Lsh, a_));
+    float bb = clamp(b_/R, -1., 1.);
+    float front = sqrt(max(0., 1.-bb*bb))*(r + Lsh) + (n1(b_*1.37 + sd0*2.3)-0.5)*0.2*r + (n1(b_*3.9 + sd0)-0.5)*0.22 + (n1(b_*11. + sd0*3.)-0.5)*0.1;
+    float pen = 0.03 + 0.02*max(a_, 0.);
+    occ = max(occ, (1.-smoothstep(front-pen, front+pen, a_))*(1.-smoothstep(0.92, 1.03, abs(b_)/R)));
+  }
+  return occ;
+}`;
+    const pA = G.program(HEAD + COMMON + `void main(){ vec2 P = ext.xy + uv*ext.zw; vec3 alb; vec4 b = bodyAt(P, alb); o = vec4(alb, b.y); }`);
+    const pB = G.program(HEAD + COMMON + `void main(){ vec2 P = ext.xy + uv*ext.zw; vec3 alb; vec4 b = bodyAt(P, alb); o = vec4(b.zw, b.x, shadowAt(P)); }`);
+    const ext = [x0, y0, W * res, H * res];
+    const TA = LR.target(G, W, H, { fmt: 'u8' }), TB = LR.target(G, W, H, { fmt: 'f16' });
+    G.draw(pA, { ext }, TA); G.draw(pB, { ext }, TB);
+    LR.mip(G, TA.tex);
+    return { a: TA.tex, b: TB.tex, ext };
   };
 })();

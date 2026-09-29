@@ -37,11 +37,11 @@
   function indFront(P, o) {
     const H = o.H, hu = H / (o.child ? 5.5 : 7.5), sh = o.w === 'b' ? 0.022 : 0; // desplazamiento de peso
     const headY = H - 0.5 * hu, hrx = 0.37 * hu, hry = 0.52 * hu;
-    const shY = H - 1.42 * hu, knee = 0.27 * H, hemY = o.child ? 0.42 * H : knee + 0.05;
+    const shY = H - 1.42 * hu, knee = 0.27 * H, hemY = o.child ? 0.3 * H : knee - 0.07;   // manto hasta media pierna
     const mw = o.child ? 0.2 : 0.255; // media anchura del manto
     // piernas
     const lx = -0.082 + sh * 0.5, rx = 0.082 + sh * 1.8, fy = 0.012;
-    const legW = o.child ? 0.085 : 0.1;
+    const legW = o.child ? 0.095 : 0.12;
     P.L([[lx, hemY + 0.05, legW * 1.1], [lx - 0.004, knee, legW], [lx - 0.01, 0.06, legW * 0.6]]);
     P.L([[rx - 0.02, hemY + 0.05, legW * 1.1], [rx, knee - (o.w === 'b' ? 0.01 : 0), legW], [rx + (o.w === 'b' ? 0.03 : 0.01), 0.06, legW * 0.6]]);
     P.E(lx - 0.012, fy + 0.02, 0.05, 0.028); P.E(rx + (o.w === 'b' ? 0.03 : 0.01), fy + 0.02, 0.05, 0.028);
@@ -77,7 +77,7 @@
     const H = o.H, hu = H / (o.child ? 5.5 : 7.5);
     const lean = o.elder ? 0.07 : 0.0;
     const headX = 0.02 + lean, headY = H - 0.5 * hu - (o.elder ? 0.035 : 0);
-    const shY = H - 1.4 * hu, knee = 0.27 * H, hemY = o.child ? 0.42 * H : knee + 0.06;
+    const shY = H - 1.4 * hu, knee = 0.27 * H, hemY = o.child ? 0.3 * H : knee - 0.06;
     // piernas
     if (o.walk) {
       const st = o.child ? 0.75 : 1;
@@ -194,7 +194,9 @@
     // sombrero: copa + ala ancha (≥ 1.8× la cabeza), ala levemente caída
     const by = H - 0.1 * hu;
     P.S([[-0.085, by], [-0.078, by + 0.075], [-0.05, by + 0.105], [0.05, by + 0.105], [0.078, by + 0.075], [0.085, by]]);
-    P.S([[-0.225, by - 0.022], [-0.2, by + 0.004], [-0.1, by + 0.016], [0.1, by + 0.016], [0.2, by + 0.004], [0.225, by - 0.022], [0.19, by - 0.018], [0.0, by - 0.012], [-0.19, by - 0.018]]);
+    // ala: extremos redondeados (no puntas de flecha), algo más gruesa
+    P.S([[-0.215, by - 0.024], [-0.2, by + 0.01], [-0.1, by + 0.02], [0.1, by + 0.02], [0.2, by + 0.01], [0.215, by - 0.024], [0.19, by - 0.03], [0.0, by - 0.02], [-0.19, by - 0.03]]);
+    P.E(-0.205, by - 0.008, 0.024, 0.02); P.E(0.205, by - 0.008, 0.024, 0.02);
     // atado al hombro
     if (o.bundle) { P.E(0.2, H - 1.75 * hu, 0.11, 0.16, -0.25); P.L([[0.12, H - 1.3 * hu, 0.03], [0.2, H - 2.4 * hu, 0.03]]); }
     // bastón de caminar (más corto que la persona)

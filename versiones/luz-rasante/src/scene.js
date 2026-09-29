@@ -79,6 +79,7 @@
         if (c.at) o.foot = toWorld(X, c.at[0], c.at[1]);
         if (c.world) o.foot = c.world.slice();
         if (c.path) o.pathW = c.path.map((q) => toWorld(X, q[0], q[1]));
+        if (c.pathWorld) o.pathW = c.pathWorld.map((q) => q.slice());
         if (c.trailAt != null) { const sc = nearestTrailS([s.center[0], s.center[1]]); o.s0 = sc + c.trailAt; }
         return o;
       });
@@ -86,7 +87,6 @@
     // roca del niño (S8) y asiento de la anciana: rocas explícitas en el horneado de la punta
     const rocks = [];
     const s8 = shots.find((s) => s.id === 'S8');
-    const eChild = clock.elev(cfg.childRock.onset);
     for (const c of cast.S8 || []) {
       if (c.rock) {
         const fa = c.face * D2R, fw = [Math.sin(fa), Math.cos(fa)];
@@ -110,7 +110,13 @@
       for (const b of B.list) {
         const p = b.world ? b.world.slice() : SC.toWorld(X, b.at[0], b.at[1]);
         const o = { p, r: b.r, hb: b.hb, asp: b.asp || (0.85 + 0.35 * rnd()), ang: b.ang != null ? b.ang : rnd() * Math.PI, seed: 1 + rnd() * 50, role: b.role || '', hidden: !!b.hidden, Rb: b.Rb || 0, jag: b.jag || 0 };
-        if (B.K) { const [t0, t1, k0, k1] = B.K; o.L = (t) => o.hb * (k0 + (k1 - k0) * (1 - Math.pow(1 - PBS.clamp((t - t0) / (t1 - t0), 0, 1), 1.7))); }
+        if (B.K) {
+          const [t0, t1, k0, k1] = B.K, kN = 1 / Math.tan(cfg.sun.nearElev * Math.PI / 180);
+          const K = (t) => k0 + (k1 - k0) * (1 - Math.pow(1 - PBS.clamp((t - t0) / (t1 - t0), 0, 1), 1.7));
+          // la masa (oculta) da el frente largo; las bolas visibles quedan dentro de él y terminan con la elevación cercana
+          // la masa (oculta) da el frente que barre; las bolas visibles tienen sombra fija (horneada) con la elevación cercana
+          o.L = b.hidden ? (t) => o.hb * K(t) : () => o.hb * 0.45 * kN;
+        }
         else o.L = () => o.hb / Math.tan(cfg.sun.nearElev * Math.PI / 180);
         list.push(o);
       }
@@ -120,10 +126,11 @@
     const CR = cfg.childRock;
     for (const c of SC.cast.S8 || []) {
       if (!c.childRock) continue;
-      const gap = CR.gap, R = CR.r;
-      const p = [c.foot[0] + SC.toSun[0] * (R + gap) + SC.perp[0] * CR.side, c.foot[1] + SC.toSun[1] * (R + gap) + SC.perp[1] * CR.side];
-      const o = { p, r: R, hb: CR.h, asp: 1.1, ang: 0.6, seed: 17.3, role: 'child' };
-      o.L = (t) => { const u = PBS.clamp((t - (CR.onset - CR.lead)) / CR.dur, 0, 1); const e2 = u * u * (3 - 2 * u); return gap + CR.cover + (CR.after - gap - CR.cover) * e2; };
+      const R = CR.r, D = CR.dist;
+      const p = [c.foot[0] + SC.toSun[0] * D + SC.perp[0] * CR.side, c.foot[1] + SC.toSun[1] * D + SC.perp[1] * CR.side];
+      const o = { p, r: R, hb: CR.h, asp: 1.15, ang: 0.6, seed: 17.3, role: 'child' };
+      // frente de la sombra (en b=0) = R + L: cubre al niño hasta el golpe y se retira ~1.2 m en 0.3 s
+      o.L = (t) => { const u = PBS.clamp((t - (CR.onset - CR.lead)) / CR.dur, 0, 1); const e2 = u * u * (3 - 2 * u); return D - R + CR.cover + (CR.after - CR.cover) * e2; };
       (out.S8 = out.S8 || []).push(o);
       c.rockRef = o;
     }

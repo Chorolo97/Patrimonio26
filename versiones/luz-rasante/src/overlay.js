@@ -29,14 +29,23 @@ void main(){
     const FS = `#version 300 es
 precision highp float; precision highp sampler2D;
 ${PBS.GLSL_NOISE}
+
+// ruido con hash entero: estable para coordenadas grandes (el hash de PBS pierde precisión con |p|·456 > ~1e5)
+float hashI(vec2 p){ uvec2 q = uvec2(ivec2(floor(p))) * uvec2(1597334677u, 3812015801u); uint n = (q.x ^ q.y) * 1597334677u; n ^= n >> 16; n *= 2246822519u; n ^= n >> 13; return float(n) * (1.0/4294967296.0); }
+float vnI(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.-2.*f); return mix(mix(hashI(i), hashI(i+vec2(1,0)), f.x), mix(hashI(i+vec2(0,1)), hashI(i+vec2(1,1)), f.x), f.y); }
+
 flat in vec4 v0, v2, v3, v4, v5; in vec2 vW; out vec4 o;
 uniform sampler2D tBake, tTip, tAtlas, tPhoto; uniform vec4 uXf; uniform float uE, uEh, uEn, uPass, uTipOn;
 uniform vec3 uSunC, uSky; uniform float uFar;
 const vec2 BIG0 = vec2(${f(BG.x0)},${f(BG.y0)}); const float BIGS = ${f(BG.size)};
-const vec2 TIP0 = vec2(${f(TB.cx - TB.size / 2)},${f(TB.cy - TB.size / 2)}); const float TIPS = ${f(TB.size)};
+uniform vec4 uTipE;
+#define TIP0 uTipE.xy
+#define TIPS uTipE.z
 const vec2 TOSUN = vec2(${f(toSun[0])},${f(toSun[1])}); const vec2 SDIR = -TOSUN; const vec2 SPERP = vec2(-SDIR.y, SDIR.x);
 const float ACOLS = ${f(atlas.cols)}, AROWS = ${f(atlas.rows)}, AWM = ${f(atlas.WM)}, AHM = ${f(atlas.HM)};
 float terrH(vec2 P){ vec2 tq = (P-TIP0)/TIPS; if(uTipOn > 0.5 && max(abs(tq.x-.5), abs(tq.y-.5)) < 0.46) return texture(tTip, tq).r; return texture(tBake, (P-BIG0)/BIGS).r; }
+float h1(float i){ return fract(sin(i*127.1 + 3.7)*43758.5453); }
+float n1(float x){ float i = floor(x), f = fract(x); f = f*f*(3.-2.*f); return mix(h1(i), h1(i+1.), f); }
 float hullW(float x, float half_, float beam){ return beam*pow(max(1.-pow(abs(x)/half_, 2.2), 0.), 0.55); }
 void main(){
   vec2 P = vW; float fp = uXf.z; int type = int(v0.x + 0.5);
@@ -79,7 +88,7 @@ void main(){
     if(pose > 2.5){ mR = vec2(0.28, 0.27)*sc; mC = vec2(0., 0.06)*sc; hC = vec2(0., -0.06)*sc; }             // sentada: rodillas al frente
     float hr = 0.1*sc;
     // manto: borde irregular (cuero), normal de cúpula
-    float wob = (vnoise(P*9.+v2.xy)-0.5)*0.12;
+    float wob = (vnI(P*9.+v2.xy)-0.5)*0.12;
     vec2 dm = (q-mC)/mR; float em = length(dm) + wob;
     vec2 dh = (q-hC)/hr; float eh2 = length(dh);
     float aa = fp/(0.1*sc) + 0.04;
@@ -94,14 +103,14 @@ void main(){
     vec3 aM = isCol > 0.5 ? ${L('jacket')} : ${L('hide')};
     vec3 warmFill = vec3(0.05, 0.035, 0.022);                       // rebote cálido: el cuerpo nunca se vuelve un agujero
     vec3 skyB = sky*1.55 + warmFill;
-    float folds = 0.9 + 0.2*vnoise(P*14. + 3.1);
+    float folds = 0.9 + 0.2*vnI(P*14. + 3.1);
     vec3 cM = aM*folds*(sunC*1.5*max(dot(nm, Lb), 0.)*lt + skyB*(0.75 + 0.25*nm.z));
     // pelo suelto: cae hacia la espalda sobre el manto
     float covHair = 0.;
     if(isCol < 0.5 && pose < 2.5){
       vec2 hq = q - hC - vec2(0., -0.13*sc);
-      float hl = 0.15*sc; float hw = 0.085*sc*(1. - 0.35*smoothstep(-hl, hl, -hq.y));
-      float dhq = length(vec2(hq.x/hw, hq.y/hl)) + (vnoise(P*30.)-0.5)*0.25;
+      float hl = 0.19*sc; float hw = 0.1*sc*(1. - 0.35*smoothstep(-hl, hl, -hq.y));
+      float dhq = length(vec2(hq.x/hw, hq.y/hl)) + (vnI(P*30.)-0.5)*0.25;
       covHair = smoothstep(1.+aa*1.5, 1.-aa*1.5, dhq);
     }
     vec3 aH = ${L('hair')};
@@ -133,97 +142,136 @@ void main(){
     vec2 cc = v2.xy; float rad = v2.z, hh = v2.w, sd0 = v3.x, lt = v3.y;
     vec2 rel = P-cc;
     vec2 lo[3]; float lr[3];
-    for(int k=0;k<3;k++){ float fk = float(k); lo[k] = (vec2(hash21(vec2(sd0, fk)), hash21(vec2(fk, sd0+3.)))-0.5)*rad*(k==0?0.25:0.9); lr[k] = rad*(k==0 ? 0.8 : 0.5 + 0.22*hash21(vec2(sd0+fk, 7.))); }
-    float leafN = (vnoise(P*7.+sd0)-0.5)*0.16*rad + (vnoise(P*19.+sd0)-0.5)*0.07*rad;
-    float Hc = 0.; vec2 gH = vec2(0.);
-    for(int k=0;k<3;k++){ vec2 dq = rel-lo[k]; float d2 = dot(dq,dq)/(lr[k]*lr[k]); float hk = lr[k]*sqrt(max(1.-d2, 0.)); 
-      if(hk > Hc){ Hc = hk; gH = -dq/max(hk, 0.02*lr[k]); } }
-    float Hs = Hc + leafN*step(0.001, Hc);
-    float aa = fp*2.;
-    float cov = smoothstep(-aa, aa, Hs - 0.04*rad);
-    if(cov > 0.){
-      float leaf = vnoise(P*13.+sd0) + 0.6*vnoise(P*31.+sd0*2.);
-      vec3 nn = normalize(vec3(-gH*0.8 + (vec2(vnoise(P*9.), vnoise(P*9.+3.))-0.5)*0.5, 1.));
-      float lb = max(dot(nn, Ls), 0.)*(0.5 + 0.7*leaf)*smoothstep(0.2*rad, 0.7*rad, Hc + 0.3*rad*leaf);
-      vec3 mc = mix(${L('monteA')}, ${L('monteB')}, fract(sd0*3.7)*0.5 + (0.8-leaf)*0.45);
-      float zz = clamp(Hc/rad, 0., 1.);
-      vec3 c = mc*(sunC*lb*lt*2.4 + sky*(0.3 + 0.5*zz)*(0.65+0.45*leaf));
-      body = vec4(c*cov, cov);
+    for(int k=0;k<3;k++){ float fk = float(k); lo[k] = (vec2(hashI(vec2(sd0*13., fk)), hashI(vec2(fk, sd0*13.+3.)))-0.5)*rad*(k==0?0.25:0.9); lr[k] = rad*(k==0 ? 0.8 : 0.5 + 0.22*hashI(vec2(sd0*13.+fk, 7.))); }
+    if(uPass > 0.5 && length(rel) < rad*1.6){
+      // copa: unión suave de tres lóbulos (sin cortes), textura de hojas fina
+      float Hc = 0., Hx = 0., Hy = 0.; float e_ = 0.02*rad;
+      for(int k=0;k<3;k++){
+        vec2 d0 = rel-lo[k]; float rr = lr[k]*lr[k];
+        Hc += exp(8.*sqrt(max(rr - dot(d0,d0), 0.))/rad);
+        vec2 dx = d0 + vec2(e_, 0.), dy = d0 + vec2(0., e_);
+        Hx += exp(8.*sqrt(max(rr - dot(dx,dx), 0.))/rad); Hy += exp(8.*sqrt(max(rr - dot(dy,dy), 0.))/rad);
+      }
+      Hc = log(Hc/3.)*rad/8.; Hx = log(Hx/3.)*rad/8.; Hy = log(Hy/3.)*rad/8.;
+      mat2 R1 = mat2(0.8,-0.6,0.6,0.8);
+      float leaf = vnI(R1*P*13.+sd0) + 0.6*vnI(P*31.+sd0*2.);
+      float edge = Hc + (leaf - 0.8)*0.12*rad;
+      float aa = fp*1.5;
+      float cov = smoothstep(-aa, aa, edge - 0.03*rad)*smoothstep(0.02*rad, 0.12*rad, Hc);
+      if(cov > 0.){
+        vec2 gH = vec2(Hx - Hc, Hy - Hc)/e_;
+        vec3 nn = normalize(vec3(-gH*0.8 + (vec2(vnI(R1*P*9.), vnI(P*9.+3.))-0.5)*0.6, 1.));
+        float lb = max(dot(nn, Ls), 0.)*(0.55 + 0.6*leaf);
+        vec3 mc = mix(${L('monteA')}, ${L('monteB')}, fract(sd0*3.7)*0.5 + (0.8-leaf)*0.45);
+        float zz = clamp(Hc/rad, 0., 1.);
+        vec3 c = mc*(sunC*lb*lt*2.6 + sky*(0.42 + 0.18*zz)*(0.6+0.5*leaf))*vec3(0.95, 1.04, 0.9);
+        body = vec4(c*cov, cov);
+      }
     }
     // sombra adosada: extrusión de la copa hacia el oeste; en tomas cercanas con la elevación cercana
     float tanS = uFar > 0.5 ? max(tanE, 0.005) : tan(radians(uEn));
     float Ls_ = min(hh/tanS, 9.*rad);
     float a_ = dot(rel, SDIR), b_ = dot(rel, SPERP);
-    float R = rad*0.95*(1. + (vnoise(vec2(b_*2.1, sd0))-0.5)*0.3);
+    float R = rad*0.95*(1. + (vnI(vec2(b_*2.1, sd0))-0.5)*0.3);
     float bb = clamp(b_/R, -1., 1.);
-    float front = sqrt(max(0., 1.-bb*bb))*(R + Ls_) + (vnoise(vec2(b_*3.3 + sd0, a_*0.7))-0.5)*0.35*rad + (vnoise(vec2(b_*11., sd0))-0.5)*0.12*rad;
+    float front = sqrt(max(0., 1.-bb*bb))*(R + Ls_) + (vnI(vec2(b_*3.3 + sd0, a_*0.7))-0.5)*0.35*rad + (vnI(vec2(b_*11., sd0))-0.5)*0.12*rad;
     float pen = 0.03 + 0.02*max(a_, 0.);
-    if(a_ > -R && abs(b_) < R*1.1) occ = (1.-smoothstep(front-pen, front+pen, a_))*(1.-smoothstep(0.9, 1.05, abs(b_)/R))*lt*mix(1., 0.5, uFar);
+    if(a_ > -0.15*R && abs(b_) < R*1.1) occ = (1.-smoothstep(front-pen, front+pen, a_))*(1.-smoothstep(0.9, 1.05, abs(b_)/R))*lt*mix(1., 0.5, uFar);
   } else if(type == 6){ // bola de granito (loma de S4, rocas de S8): cuerpo + sombra de largo dirigido
     vec2 cc = v2.xy; float r = v2.z, hb = v2.w; float Lsh = v3.x, sd0 = v3.y, asp = v3.z, ang = v3.w;
     float lt = v4.x, hidden = v4.y, Rb = v4.z > 0. ? v4.z : r, jagA = v4.w;
     vec2 rel = P - cc;
-    if(hidden < 0.5){
+    if(hidden < 0.5 && uPass > 0.5){
       vec2 qr = mat2(cos(ang), -sin(ang), sin(ang), cos(ang))*rel; qr /= vec2(asp, 1./asp);
       float dn = length(qr)/r;
-      float lump = (vnoise(P*2.6/r + sd0)-0.5)*0.26 + (vnoise(P*7./r + sd0*2.)-0.5)*0.08 + (vnoise(P*40.)-0.5)*0.025;
-      float d = dn + lump;
-      float aa = fp/r + 0.01;
-      float cov = smoothstep(1.+aa, 1.-aa, d);
-      if(cov > 0.){
-        float dd = min(d, 1.);
-        float z = pow(max(1.-dd*dd, 0.), 0.55);
-        vec2 g = normalize(rel + 1e-4)*dd/max(z, 0.08);
-        vec2 facet = (vec2(vnoise(P*2.2/r+sd0), vnoise(P*2.2/r+sd0+5.))-0.5)*0.9 + (vec2(vnoise(P*9.), vnoise(P*9.+5.))-0.5)*0.35;
-        vec3 nn = normalize(vec3(g*min(hb/r, 1.4)*0.55 + facet, 1.));
-        float ndl = dot(nn, Ls);
-        vec3 ph = texture(tPhoto, P/4.3 + sd0).rgb - 0.5;
-        float gr = vnoise(P*2.) * 0.5 + vnoise(P*7.)*0.3 + (ph.r + ph.g)*0.6;
-        vec3 alb = mix(${L('graniteA')}, ${L('graniteC')}, smoothstep(0.15, 0.85, gr + 0.25*z));
-        float lich = smoothstep(0.55, 0.75, vnoise(P*1.4/r + sd0*3.)*0.65 + vnoise(P*6.)*0.35)*smoothstep(0.1, 0.5, z);
-        alb = mix(alb, mix(${L('lichenA')}, ${L('lichenB')}, gr), lich*0.6);
-        alb *= 0.85 + 0.3*hash21(floor(P/0.025));
-        // cara al sol: hombro cálido; núcleo de sombra propio del lado oeste
-        float sunT_ = max(ndl, 0.)*smoothstep(-0.04, 0.1, ndl);
-        vec3 c = alb*(sunC*2.4*sunT_*lt + sky*(0.5 + 0.5*z)*(0.85 + 0.3*nn.z));
-        body = vec4(c*cov, cov);
+      if(dn < 1.4){
+        float lump = (vnI(P*2.6/r + sd0)-0.5)*0.26 + (vnI(P*7./r + sd0*2.)-0.5)*0.09;
+        float d = dn + lump;
+        float aa = fp/r + 0.01;
+        float cov = smoothstep(1.+aa, 1.-aa, d);
+        if(cov > 0.){
+          float dd = min(d, 1.);
+          float z = pow(max(1.-dd*dd, 0.), 0.55);
+          vec2 g = normalize(rel + 1e-4)*dd/max(z, 0.08);
+          float fn = vnI(P*2.2/r+sd0), fm = vnI(P*8.3+sd0);
+          vec2 facet = (vec2(fn, fract(fn*7.13+fm))-0.5)*0.5 + (fm-0.5)*vec2(0.2, -0.14);
+          vec3 nn = normalize(vec3(g*min(hb/r, 1.4)*0.55 + facet, 1.));
+          float ndl = dot(nn, Ls);
+          float gr = vnI(P*3.1)*0.6 + fm*0.4;
+          vec3 alb = mix(${L('graniteA')}, ${L('graniteC')}, smoothstep(0.15, 0.85, gr + 0.25*z))*0.85;
+          float lich = smoothstep(0.58, 0.78, fn*0.6 + gr*0.4)*smoothstep(0.1, 0.5, z);
+          alb = mix(alb, mix(${L('lichenA')}, ${L('lichenB')}, gr), lich*0.3);
+          alb *= 0.85 + 0.3*hashI(floor(P/0.025));
+          float sunT_ = max(ndl, 0.)*smoothstep(-0.04, 0.1, ndl);   // hombro cálido; núcleo de sombra del lado oeste
+          vec3 c = alb*(sunC*1.5*sunT_*lt + sky*(0.5 + 0.5*z)*(0.85 + 0.3*nn.z));
+          body = vec4(c*cov, cov);
+        } else body = vec4(0., 0., 0., (1.-smoothstep(1.0, 1.2, d))*smoothstep(0.9, 1.0, d)*0.4);
       }
-      float ring = (1.-smoothstep(1.0, 1.2, d))*smoothstep(0.9, 1.0, d)*0.4;
-      if(cov <= 0.) body = vec4(0., 0., 0., ring);
     }
-    // sombra: extrusión del domo, frente(b) = √(1−b²/Rb²)·(Ra+L), borde orgánico
-    float a_ = dot(rel, SDIR), b_ = dot(rel, SPERP);
-    float Ra = r;
-    float R = Rb*(0.96 + (vnoise(vec2(b_*1.5/Rb, sd0))-0.5)*0.22);
-    float bb = clamp(b_/R, -1., 1.);
-    float front = sqrt(max(0., 1.-bb*bb))*(Ra + Lsh)
-      + (vnoise(vec2(b_*0.33 + sd0, 1.3))-0.5)*jagA + (vnoise(vec2(b_*1.4 + sd0, 4.1))-0.5)*(0.25*r + 0.35*jagA)
-      + (vnoise(vec2(b_*6., sd0))-0.5)*0.12 + (vnoise(vec2(b_*23., sd0+2.))-0.5)*0.05;
-    float pen = 0.03 + 0.02*max(a_, 0.);
-    if(a_ > -Ra && abs(b_) < R*1.1) occ = (1.-smoothstep(front-pen, front+pen, a_))*(1.-smoothstep(0.92, 1.03, abs(b_)/R))*lt;
-  } else if(type == 3){ // bote varado (5 m)
+    // sombra: extrusión del domo, frente(b) = √(1−b²/Rb²)·(Ra+L), borde orgánico (ruido 1D por b)
+    if(uPass < 0.5){
+      float a_ = dot(rel, SDIR), b_ = dot(rel, SPERP);
+      float Ra = r;
+      if(a_ > -0.15*Ra && abs(b_) < Rb*1.2){
+        float R = Rb*(0.96 + (n1(b_*1.5/Rb + sd0)-0.5)*0.22)*(1. - 0.3*smoothstep(0., Ra + Lsh, a_)*step(hidden, 0.5));
+        float bb = clamp(b_/R, -1., 1.);
+        float front = sqrt(max(0., 1.-bb*bb))*(Ra + Lsh)
+          + (n1(b_*0.21 + sd0)-0.5)*jagA*1.3 + (n1(b_*0.57 + sd0*1.7)-0.5)*jagA*0.8
+          + (n1(b_*1.37 + sd0*2.3)-0.5)*(0.2*r + 0.2*jagA) + (n1(b_*3.9 + sd0)-0.5)*0.22 + (n1(b_*11. + sd0*3.)-0.5)*0.1 + (n1(b_*29.+sd0*5.)-0.5)*0.05;
+        float pen = 0.03 + 0.02*max(a_, 0.);
+        occ = (1.-smoothstep(front-pen, front+pen, a_))*(1.-smoothstep(0.92, 1.03, abs(b_)/R))*lt;
+      }
+    }
+  } else if(type == 3){ // bote de remos varado (5 m): tablas, borda iluminada del lado del sol, interior en sombra cálida
     vec2 sc = v2.xy; float hd = v2.z; float lt = v2.w; vec2 fw = vec2(sin(hd), cos(hd)), sd = vec2(fw.y, -fw.x);
-    for(int k=0;k<14;k++){ float s = (float(k)+0.5)/14.*0.35/tanE; vec2 q = P - sc - SDIR*s; float x = dot(q,fw), y = dot(q,sd);
-      float hw = hullW(x, 2.5, 0.75); occ = max(occ, smoothstep(0.03, -0.03, abs(y)-hw)*step(abs(x),2.5)); }
-    occ = min(occ, 1.)*lt*0.95;
+    float tanB = uFar > 0.5 ? max(tanE, 0.01) : tan(radians(uEn));
+    // sombra: la silueta del casco (borda a 0.6 m) extruida hacia el oeste, con penumbra
+    float Lb = 0.6/tanB;
+    for(int k=0;k<10;k++){ float s = (float(k)+0.5)/10.*Lb; vec2 q = P - sc - SDIR*s; float x = dot(q,fw), y = dot(q,sd);
+      float hw = hullW(x, 2.5, 0.78)*(1. - 0.25*float(k)/10.); float pen = 0.02 + 0.03*s;
+      occ = max(occ, smoothstep(pen, -pen, abs(y)-hw)*smoothstep(2.5+pen, 2.5-pen, abs(x))); }
+    occ = min(occ, 1.)*lt*0.92;
     vec2 q = P - sc; float x = dot(q,fw), y = dot(q,sd);
-    float hw = hullW(x, 2.5, 0.75);
-    float cov = smoothstep(hw+0.5*fp, hw-0.5*fp, abs(y))*step(abs(x),2.5);
-    float gun = smoothstep(hw-0.14, hw-0.07, abs(y));
-    float thwart = step(abs(fract((x+0.35)/1.1)-0.5), 0.07)*step(abs(x),1.8);
-    vec3 c = mix(${L('hull')}*0.55, ${L('deck')}*0.95, max(gun, thwart*0.9));
-    float sideLit = smoothstep(-0.2, 0.3, sign(y)*dot(TOSUN, sd));
-    c *= sunC*lt*(0.25 + 0.6*gun*sideLit + 0.3*thwart) + sky*0.8;
-    body = vec4(c*cov, cov);
+    float hw = hullW(x, 2.5, 0.78);
+    float cov = smoothstep(hw+0.6*fp, hw-0.6*fp, abs(y))*smoothstep(2.5+fp, 2.5-fp, abs(x));
+    float scour = (1.-smoothstep(hw, hw+0.35, abs(y)))*(1.-cov)*smoothstep(2.9, 2.3, abs(x))*0.35;   // arena removida junto al casco
+    if(cov > 0.){
+      float gw = 0.07;
+      float gun = smoothstep(hw-gw-0.6*fp, hw-gw+0.6*fp, abs(y));                // borda
+      float sunSide = step(0., y*dot(sd, TOSUN));
+      float inner = 1.-gun;
+      // tablas del fondo a lo largo de la quilla
+      float plank = 0.88 + 0.12*smoothstep(0.42, 0.5, abs(fract(y/0.13)-0.5)*1.)*0.0 + 0.1*step(0.46, abs(fract(y/0.13+0.5)-0.5));
+      float grainW = 0.92 + 0.16*vnI(vec2(x*3., y*40.));
+      float th = 0.; for(int k=0;k<3;k++){ float xk = -1.3 + 1.25*float(k); th = max(th, smoothstep(0.11+fp, 0.11-fp, abs(x-xk))); }
+      th *= step(abs(y), hw-gw);
+      // sombra interior: la borda del lado del sol sombrea el fondo junto a ella
+      float inShade = sunSide*(1.-smoothstep(0.0, 0.45, (hw-gw) - abs(y)))*inner;
+      vec3 wood = ${L('deck')}*grainW*plank;
+      vec3 cIn = wood*(sunC*0.55*(1.-inShade)*lt + sky*0.75);
+      vec3 cTh = ${L('deck')}*1.15*grainW*(sunC*0.7*lt + sky*0.8);
+      vec3 cGun = ${L('hull')}*1.5*(sunC*(0.25 + 1.3*(1.-sunSide))*lt + sky*0.7);
+      vec3 c = mix(cIn, cTh, th);
+      c = mix(c, cGun, gun);
+      body = vec4(c*cov, cov);
+    } else body = vec4(0., 0., 0., scour);
+  } else if(type == 7){ // huella: par escalonado de hoyuelos poco profundos (sin dedos ni talón)
+    vec2 c = v2.xy, dir = v2.zw; vec2 pr = vec2(-dir.y, dir.x);
+    vec2 q = P - c; vec2 ql = vec2(dot(q,dir)/v3.x, dot(q,pr)/v3.y);
+    float dd = length(ql) + (vnI(P*22.)-0.5)*0.3;
+    float inside = 1.-smoothstep(0.75, 1.1, dd);
+    float w = dot(normalize(q+1e-4), TOSUN);
+    fDark = inside*smoothstep(-0.6, 0.1, w)*v3.w;
+    fLit = inside*smoothstep(-0.3, -0.85, w)*v3.w*0.8;
   } else if(type == 4){ // barco fondeado: casco 18×5, dos palos, velas aferradas, sin banderas
     vec2 sc = v2.xy; float hd = v2.z; float lt = v2.w; vec2 fw = vec2(sin(hd), cos(hd)), sd = vec2(fw.y, -fw.x);
     float roll = v3.x;
-    for(int k=0;k<8;k++){ float s = (float(k)+0.5)/8.*1.6/tanE; vec2 q = P - sc - SDIR*s; float x = dot(q,fw), y = dot(q,sd);
+    for(int k=0;k<6;k++){ float s = (float(k)+0.5)/6.*1.6/tanE; vec2 q = P - sc - SDIR*s; float x = dot(q,fw), y = dot(q,sd);
       occ = max(occ, smoothstep(0.1, -0.1, abs(y)-hullW(x, 9., 2.5))*step(abs(x),9.)); }
     for(int m=0;m<2;m++){ vec2 mb = sc + fw*(m==0? 3.8 : -1.6); float mh = m==0? v3.z : v3.w;
       vec2 top = mb + sd*roll*mh + SDIR*(mh/tanE);
       vec2 pa = P-mb, ba = top-mb; float t = clamp(dot(pa,ba)/dot(ba,ba),0.,1.); float dd = length(pa-ba*t);
-      float wdt = max(mix(0.26, 0.15, t), 1.4*fp);
+      float wdt = max(mix(0.34, 0.2, t), 1.1*fp);
       occ = max(occ, (1.-smoothstep(wdt-0.4*fp, wdt+0.6*fp, dd))*(1.-t*0.15));
       vec2 b0 = mb + SDIR*(2.2/tanE), b1 = mb - fw*5. + SDIR*(2.0/tanE);
       pa = P-b0; ba = b1-b0; t = clamp(dot(pa,ba)/dot(ba,ba),0.,1.); dd = length(pa-ba*t);
@@ -238,10 +286,10 @@ void main(){
     float cov = smoothstep(hw+0.5*fp, hw-0.5*fp, abs(y))*step(abs(x),9.);
     float rail = smoothstep(hw-0.35, hw-0.2, abs(y));
     float planks = 0.85 + 0.15*step(0.5, fract(y/0.32));
-    vec3 c = mix(${L('deck')}*planks, ${L('hull')}, rail);
+    vec3 c = mix(${L('deck')}*planks*1.35, ${L('hull')}, rail);
     c = mix(c, ${L('hull')}*0.6, step(abs(x-0.8),1.1)*step(abs(y),0.9));
-    float lL = 0.3 + 0.55*rail*smoothstep(-0.2, 0.3, sign(y)*dot(TOSUN, sd));
-    c *= sunC*lL*lt*0.9 + sky*0.9;
+    float lL = 0.45 + 0.9*rail*smoothstep(-0.2, 0.3, sign(y)*dot(TOSUN, sd));
+    c *= sunC*lL*lt*0.9 + sky*1.1;
     for(int m=0;m<2;m++){ float mx = m==0? 3.8 : -1.6; float bx = x - mx;
       if(bx < 0.3 && bx > -5.2 && abs(y) < 0.3){ vec3 s2 = ${L('sail')}*(sunC*0.6*lt*(0.6+0.4*smoothstep(-0.3,0.3,y*sign(dot(TOSUN,sd)))) + sky*0.9); c = mix(c, s2, smoothstep(0.3,0.18,abs(y))); }
       if(length(vec2(bx, y)) < 0.28) c = ${L('hull')}*0.5*(sky*0.8); }
@@ -251,7 +299,7 @@ void main(){
   } else if(type == 5){ // huella genérica: óvalo con microsombra, sin dedos ni talón
     vec2 c = v2.xy, dir = v2.zw; vec2 pr = vec2(-dir.y, dir.x);
     vec2 q = P - c; vec2 ql = vec2(dot(q,dir)/v3.x, dot(q,pr)/v3.y);
-    float dd = length(ql) + (vnoise(P*25.)-0.5)*0.2;
+    float dd = length(ql) + (vnI(P*25.)-0.5)*0.2;
     float inside = 1.-smoothstep(0.85,1.05,dd);
     float w = dot(normalize(q+1e-4), TOSUN);
     fDark = inside*smoothstep(-0.55,-0.1,w)*v3.w;
@@ -275,6 +323,7 @@ void main(){
     let XF = null; const box = [0, 0, 0, 0];
     function add(pass, type, o, a, b, p2, p3, p4, p5) {
       if (n >= MAXI) return;
+      if (window.LR_SKIP && window.LR_SKIP[type]) return;
       if (XF) for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
         const wx = o[0] + a[0] * sx + b[0] * sy - XF.cx, wy = o[1] + a[1] * sx + b[1] * sy - XF.cy;
         const px = 540 + (wx * XF.RX[0] + wy * XF.RX[1]) / XF.mpp, py = 960 - (wx * XF.UY[0] + wy * XF.UY[1]) / XF.mpp;
@@ -295,7 +344,7 @@ void main(){
       gl.useProgram(pr);
       gl.disableVertexAttribArray(0);
       const bindT = (name, tex, unit) => { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tex); gl.uniform1i(loc(name), unit); };
-      bindT('tI', tI, 0); bindT('tBake', bk.big.tex, 1); bindT('tTip', bk.tip.tex, 2); bindT('tAtlas', atlas.tex, 3); bindT('tPhoto', U0.photo, 4);
+      bindT('tI', tI, 0); bindT('tBake', bk.big.tex, 1); bindT('tTip', U0.tipTex.tex, 2); gl.uniform4fv(loc('uTipE'), [U0.tipTex.x0, U0.tipTex.y0, U0.tipTex.size, 0]); bindT('tAtlas', atlas.tex, 3); bindT('tPhoto', U0.photo, 4);
       gl.uniform4fv(loc('uXf'), U0.uXf); gl.uniform1f(loc('uE'), U0.uE); gl.uniform1f(loc('uEh'), U0.uEh); gl.uniform1f(loc('uEn'), U0.uEn); gl.uniform1f(loc('uTipOn'), U0.tip);
       gl.uniform3fv(loc('uSunC'), U0.sunC); gl.uniform3fv(loc('uSky'), U0.sky); gl.uniform1f(loc('uFar'), U0.far || 0);
       gl.viewport(0, 0, cfg.width, cfg.height);
