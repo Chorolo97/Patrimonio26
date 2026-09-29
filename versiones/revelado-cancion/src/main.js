@@ -3,6 +3,7 @@ window.createReel = async function (canvas, cfg) {
   const warnings = [];
   const RV = window.RV;
   const T0INIT = performance.now();
+  const lg = (s) => { if (/log/.test(location.search)) console.log('LOG ' + s + ' @' + ((performance.now() - T0INIT) / 1000).toFixed(1)); };
   await PBS.loadFonts(cfg.assets + 'fonts/', warnings);
   const audio = await PBS.loadAudioFeatures(cfg.featuresUrl);
   if (audio.missing) warnings.push('Sin rasgos de audio: se usan valores constantes.');
@@ -48,7 +49,9 @@ window.createReel = async function (canvas, cfg) {
   for (const key of photoKeys) {
     let img = null;
     try { img = await PBS.loadImage(cfg.assets + cfg.photos[key]); } catch (e) { warnings.push('FALTA FOTO ' + cfg.photos[key]); }
+    lg('foto ' + key + ' cargada');
     mat[key] = RV.processPhoto(img, key, cfg);
+    lg('foto ' + key + ' procesada');
     if (/dbg/.test(location.search)) { // superposición de máscaras para revisar polígonos (sólo depuración)
       const M = mat[key], s = Math.max(1, Math.round(M.tw / 900)), W2c = Math.floor(M.tw / s), H2c = Math.floor(M.th / s), c = document.createElement('canvas'); c.width = W2c; c.height = H2c;
       const g = c.getContext('2d'), id = g.createImageData(W2c, H2c);
@@ -62,6 +65,7 @@ window.createReel = async function (canvas, cfg) {
   }
 
   // ---------- GL ----------
+  lg('fotos listas');
   const gl = new PBS.GL(cfg.width, cfg.height), G = gl.gl;
   const triBuf = G.createBuffer();
   G.bindBuffer(G.ARRAY_BUFFER, triBuf);
@@ -120,6 +124,7 @@ window.createReel = async function (canvas, cfg) {
     G.texSubImage2D(G.TEXTURE_2D, 0, 0, 0, 256, 3, G.RGBA, G.UNSIGNED_BYTE, toneBuf);
   }
 
+  lg('texturas listas');
   // ---------- figuras ----------
   const SR = cfg.sizeRule;
   const unitOf = (f, kind) => {
@@ -150,6 +155,7 @@ window.createReel = async function (canvas, cfg) {
   }
   const progs = {};
   const progFor = (P) => progs[P.id] || (progs[P.id] = gl.program(RV.printSource({ kind: P.kind, archive: !!P.archive, figB: P.hasB })));
+  lg('atlas listos');
   const compProg = gl.program(RV.compositeSource());
 
   // ---------- secciones y relevos ----------
@@ -178,6 +184,7 @@ window.createReel = async function (canvas, cfg) {
   // el frente se ve mientras cruza el cuadro
   const menVisible = (R, t) => (R.type === 'menisco' && t >= R.t0 - 0.05 && t < R.tLast + 0.3);
 
+  lg('relevos listos');
   // ---------- plata que se suelta: partículas ----------
   const foamVS = (() => {
     const sh = (type, src) => { const s = G.createShader(type); G.shaderSource(s, src); G.compileShader(s); if (!G.getShaderParameter(s, G.COMPILE_STATUS)) throw new Error(G.getShaderInfoLog(s)); return s; };
@@ -260,7 +267,7 @@ window.createReel = async function (canvas, cfg) {
   // ---------- capas 2D: anotaciones de archivo ----------
   const notes = (cfg.annotations || []).map((a) => {
     const c = document.createElement('canvas'); c.width = cfg.width; c.height = a.h || 420;
-    const g = c.getContext('2d');
+    const g = c.getContext('2d', { willReadFrequently: true });
     const lines = [];
     const wrap = (text, font, maxW) => { g.font = font; const words = text.split(' '), out = []; let cur = ''; for (const w of words) { const t = cur ? cur + ' ' + w : w; if (g.measureText(t).width <= maxW || !cur) cur = t; else { out.push(cur); cur = w; } } if (cur) out.push(cur); return out; };
     const S = cfg.noteStyle;
@@ -399,8 +406,11 @@ window.createReel = async function (canvas, cfg) {
       uSurge: sg, uSwashPhase: S * 1.35, uGrottoPhase: S * cfg.grotto.swashRate + 0.4, uOn: onsetInfo(t), uTone: toneTex,
     };
     G.bindBuffer(G.ARRAY_BUFFER, triBuf);
+    const prof = window.__prof ? [performance.now()] : null;
     if (Aold) gl.draw(progFor(Aold), { ...common, ...printU(Aold, t, true), uIsOld: 1 }, fboA);
+    if (prof) { G.finish(); prof.push(performance.now()); }
     gl.draw(progFor(B), { ...common, ...printU(B, t, false), uIsOld: 0 }, fboB);
+    if (prof) { G.finish(); prof.push(performance.now()); }
     const sink = isLab ? PBS.smooth((t - R.t0) / (R.dur * 0.5)) : 0;
     const selB = selAmt(B, t), selA = Aold ? selAmt(Aold, t) : 0;
     gl.draw(compProg, {
@@ -408,6 +418,7 @@ window.createReel = async function (canvas, cfg) {
       uGrain: grainTex, uPB: fboB.tex, uPA: Aold ? fboA.tex : dummy, uGOff: [(frame * 389) % 1024, (frame * 683 + 211) % 1024],
       uBurn: [burnP, Bn.yFull, Bn.yZero, burnDens], uBurn2: [t * Bn.drift, Bn.edgeAmp, burnFeather, 1],
     });
+    if (prof) { G.finish(); prof.push(performance.now()); }
     // plata → espuma (y roca → arena): dos pases conmutativos
     for (const sh of shed) {
       const sc = sh.sc, P = prints[sc.print];
@@ -427,7 +438,9 @@ window.createReel = async function (canvas, cfg) {
       G.blendEquation(G.FUNC_ADD); G.disable(G.BLEND);
       G.bindBuffer(G.ARRAY_BUFFER, triBuf);
     }
+    if (prof) { G.finish(); prof.push(performance.now()); }
     ctx.drawImage(gl.canvas, 0, 0);
+    if (prof) { ctx.getImageData(0, 0, 1, 1); prof.push(performance.now()); window.__prof.last = prof.slice(1).map((v, i) => Math.round(v - prof[i])); }
     for (const n of notes) drawNote(ctx, n, t);
     PBS.drawClosing(ctx, t, { t0: cfg.closingAt, dark: true, logo, logoWidth: cfg.logo.width, y: cfg.closing.y, shadow: cfg.closing.shadow });
   }
@@ -441,7 +454,8 @@ window.createReel = async function (canvas, cfg) {
   if (logo) warnings.push('Logo 441 px ampliado a 620: pedir versión vectorial o PNG grande');
   // precalentar cada programa (el primer dibujo de cada uno compila y enlaza de forma perezosa en SwiftShader)
   const warm = [...new Set(relays.map((R) => R.t0 + 0.4).concat(relays.map((R) => R.tBleached + 0.3)))].sort((a, b) => a - b);
-  for (const tw of warm) render(Math.max(0, tw));
+  lg('antes de precalentar');
+  for (const tw of warm) { render(Math.max(0, tw)); G.finish(); lg('precalentado ' + tw.toFixed(1)); }
   G.finish();
   window.__rv = { W, Sph, onsets, relays: relays.map((R) => ({ print: R.print, type: R.type, t0: R.t0, tLast: R.tLast, tBleached: R.tBleached, tDone: R.tDone, v: R.v })), shed: shed.map((s) => ({ print: s.sc.print, n: s.n, cand: s.cand })), prints, camAt, initMs: performance.now() - T0INIT, groups: Object.fromEntries(Object.entries(prints).map(([id, P]) => [id, Object.fromEntries(Object.entries(P.gdef).map(([g, d]) => [g, d.start]))])) };
   return { warnings, logo: !!logo, render };

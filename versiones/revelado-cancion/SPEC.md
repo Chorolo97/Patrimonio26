@@ -36,29 +36,32 @@ Copias fotográficas reales del lugar tratadas como papel en la bandeja de revel
 - No usar `yaguaron_iteños_NO_USAR.jpg`.
 - Las máscaras mar/roca/arena/cielo de cada foto se calculan como en Revelado (polígonos más relleno por semilla). Hay que verificarlas visualmente.
 
-## 3. Letra y tiempos (anclaje por tramos medidos; las líneas exactas se verifican al oído)
-Transcripción del usuario, con [?] donde hay dudas. **No se subtitula la letra.** Solo se anotan algunas palabras (§5).
+## 3. Tiempos por verso (transcripción con tiempos del usuario; tiene prioridad sobre cualquier estimación anterior)
+No se subtitula la letra. Solo se indican las primeras palabras de cada verso como referencia. El usuario tiene la transcripción completa; no se copia al repositorio público.
 
-| Tramo (s) | Música | Letra | Copia y acción |
-|---|---|---|---|
-| 0–19,5 | intro de guitarra | — | **aerea**. La postal vieja y quieta; el menisco la cruza y la punta revela su espuma viva. Ficha de créditos (§5) de 2,0 a 9,0 s. |
-| 19,5–26 | estrofa 1 | «Dice que se echó en sus brazos / y el mar se puso a llorar» | **canal**: el mar entra y abraza la roca; la espuma sube y baja con `lowSmooth`. |
-| 26–33 | | «Sierra de Punta Ballena / piedra que se ahogó en el mar» | **canal** con acercamiento lento hacia la roca en el agua. |
-| 33–38,4 | | repite «Dice que se echó… llorar» | Relevo (menisco) hacia **relieve**, que entra a las 38 s. |
-| 38,4–50,5 | recitado | «Camino de mi esteña serranía / vertebrado de picos y hondonadas / cuajado su espinazo de alboradas / refugio de orientales rebeldías» | **relieve**: el lomo de la sierra desde arriba. Una luz de alba recorre el espinazo de arriba hacia abajo. Primeras personas indígenas: pequeñas, en el sendero del lomo, quietas o caminando despacio, desde 41 s. |
-| 50,5–60,6 | | «Y allá del Yaguarón su lejanía / que entre vuelos de cuervos celajes / rompió en las olas su encrespado viaje / y zambulló al azul su travesía» | Relevo a **abra**: entre las paredes de roca, el horizonte y los cerros lejanos. Anotación «Yaguarón» (51–57 s). Dos personas indígenas sobre la roca de la izquierda miran la lejanía. La ola rompe con los golpes medidos. |
-| 60,6–62,85 | respiro de guitarra | — | enjuague (como en Revelado). |
-| 62,85–73 | estrofa 2 | «[?] y piedra arisca / de las sierras del yerbal / Tacuarí de los quileros / y el Guazunambí arachán» | **yerbal**: lomas y pastizal. Tres anotaciones seguidas: «Sierras del Yerbal», «Tacuarí · quilero», «Guazunambí · arachán». Un grupo indígena pequeño recorre la loma. |
-| 73–80,6 | | «Va en las sierras de Leonardo / sangre del coronillar» | **yerbal** con viraje cálido pardo-rojizo sutil (virador de selenio o cobre, nunca rojo literal) para «sangre del coronillar». Anotación «coronilla». |
-| 80,6–86,3 | | «Sierra que se vuelve espuma / y es un jazminero el mar» | **rompiente**: el granito suelta plata que se vuelve espuma blanca (efecto clave de Revelado); el mar florece en encaje. |
-| 86,3–110,8 | interludio de guitarra | — | **portezuelo**: la visión de Alejandra. Personas indígenas en la playa en sus tareas (las de Revelado P1/P3). Desde ≈97 s, más tarde y lejos, dos colonos con sombrero y una vela; todos permanecen, sin interacción. |
-| 110,8–121 | estrofa 3 | «[?] de los indios / pororó que veo blanquear» | Relevo a **gruta**: personas indígenas en la gruta (G1–G3). «Pororó que veo blanquear» (pororó: maíz que revienta en blanco): la espuma estalla y blanquea en la boca de la gruta con los golpes medidos. Sin anotación. |
-| 121,8–128,4 | | «Cerrazón, tus aguas altas / que el indio llamó el Aiguá» | **estratos**: niebla (cerrazón) que baja entre los estratos y agua que corre por la hendidura. Anotación «Aiguá». |
-| 128,4–≈139 | | «Dice que se echó en sus brazos / y el mar se puso a llorar» | Relevo a **playa**: pastos al viento, mar gris; personas indígenas en la playa (una agachada, un adulto con atado, un anciano). |
-| ≈139–155,5 | coda | «Dice que se echó… llorar / Sierra [?] arena / de tanto llorarle al mar» (×3) | **playa**: la plata de la roca se vuelve arena. Desde 150,5 s el cielo se quema en oscuro (tarjeta a mano) y aparece el cierre. |
-| 155,5–162,8 | acorde final | — | Cierre sostenido. El niño todavía se está revelando (≈70 % al final) y la espuma sigue respirando abajo. Movimiento al 40 % desde 156 s. |
+| Tramo (s) | Verso (inicio) | Copia y acción |
+|---|---|---|
+| 0–19,06 | intro de guitarra | **aerea**: la postal vieja; el menisco revela la punta y su espuma viva. Créditos de 2,0 a 9,0 s. |
+| 19,06–24,78 | «Dice que se echó en sus brazos…» | **canal**: el mar entra y abraza la roca. |
+| 26,14–32,42 | «Sierra de Punta Ballena, piedra que se ahogó…» | **canal**: acercamiento lento a la roca en el agua. |
+| 33,42–39,60 | «Dice que se echó…» (repetición) | **canal**; relevo a **relieve** entre 39,6 y 40,4. |
+| 40,42–50,42 | recitado: «Camino de mi esteña serranía… espinazo de alboradas… orientales rebeldías» | **relieve**: la luz del alba recorre el espinazo. Primeras personas indígenas en el sendero desde ≈41 s. |
+| 50,42–55,28 | «y allá del Yaguarón su lejanía… vuelos de cuervos y celajes» | relevo a **abra** a las 50,4: lejanía y horizonte. Anotación «Yaguarón» 50,6–55,2. Dos personas indígenas miran la lejanía. |
+| 55,28–60,86 | «rompió en las olas su encrespado viaje…» | **abra**: la ola rompe con los golpes medidos. |
+| 60,86–62,52 | respiro | enjuague. |
+| 62,52–68,34 | «Del Timbes y Piedra Arisca, de las sierras del Yerbal» | **yerbal**. Anotación «Sierras del Yerbal» 63,0–68,3. |
+| 69,90–75,64 | «Tacuarí de los quileros y el Guazunambí arachán» | **yerbal**. Anotación «Tacuarí · quilero» 69,9–72,8 y luego «Guazunambí · arachán» 72,8–76,0. |
+| 75,64–82,40 | «van las sierras de Leonardo / sangre del coronillar» | **yerbal** con viraje pardo-rojizo sutil. Anotación «coronilla» 79,6–83,6. |
+| 84,18–90,28 | «sierra que se vuelve espuma / y es un jazminero el mar» | relevo a **rompiente** a las 83,6: el granito suelta plata que se vuelve espuma y el mar florece en encaje. |
+| 90,28–110,48 | interludio de guitarra | **portezuelo**: personas indígenas en sus tareas; desde ≈99 s, lejos, dos colonos y una vela. |
+| 110,48–117,14 | «Carapé vos de los indios / pororó que veo blanquear» | relevo a **gruta** a las 110,2. Anotación «Carapé» 110,6–116,5. La espuma estalla en blanco en la boca con «pororó» (≈114–117). |
+| 117,84–123,40 | «Cerrazón, tus aguas altas / que el indio llamó el Aiguá» | relevo a **estratos** a las 117,5: la niebla (cerrazón) baja y el agua corre por la hendidura. Anotación «Aiguá» 120,8–126,0. |
+| 124,92–130,96 | «Dice que se echó… llorar» | relevo a **playa** a las 124,5: pastos al viento y personas indígenas en la playa. |
+| 132,00–138,16 | «Dice que se echó… llorar» (coda) | **playa**. |
+| 138,84–152,18 | «Sierra deshecha en arena / de tanto llorarle al mar» (×3) | **playa**: la plata del granito se deshace en arena de 138,8 a 150 s. El cielo empieza a quemarse a las 148 s. |
+| 152,18–162,8 | guitarra final | Cierre sostenido desde ≈150,5 s. El niño se sigue revelando y la espuma respira. Movimiento al 40 % desde 157 s. |
 
-Todos los tiempos van en `src/config.js` (`sections[]`, `annotations[]`) para ajustarlos al oído sin tocar código.
+Todos los tiempos van en `src/config.js` (`sections[]`, `annotations[]`).
 
 ## 4. Relevos
 - Menisco de Revelado, irregular, 0,9–1,6 s por relevo. Delante del frente queda la copia vieja; detrás, la nueva. Nunca hay doble exposición y ninguna figura queda gris.

@@ -288,49 +288,53 @@
       }
       x0 = Math.floor(x0); y0 = Math.floor(y0); x1 = Math.ceil(x1); y1 = Math.ceil(y1);
       const W = Math.ceil((x1 - x0) * S), H = Math.ceil((y1 - y0) * S);
-      const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'); g.fillStyle = '#fff'; return [c, g]; };
-      const [cCov, gCov] = mk(), [cSh, gSh] = mk(), [cLum, gLum] = mk(), [cLit, gLit] = mk(), [cCore, gCore] = mk(), [cTmp, gTmp] = mk();
+      const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.fillStyle = '#fff'; return [c, g]; };
+      const [cCov, gCov] = mk(W, H), [cSh, gSh] = mk(W, H), [cLum, gLum] = mk(W, H), [cLit, gLit] = mk(W, H), [cCore, gCore] = mk(W, H);
       const rl = Math.hypot(light.rim[0], light.rim[1]) || 1, rdx = light.rim[0] / rl, rdy = light.rim[1] / rl;
       const blurDraw = (dst, src, px, alpha = 1) => { dst.save(); dst.filter = px > 0.05 ? `blur(${px}px)` : 'none'; dst.globalAlpha = alpha; dst.drawImage(src, 0, 0); dst.restore(); };
-      const tmp = (fn) => { gTmp.save(); gTmp.setTransform(1, 0, 0, 1, 0, 0); gTmp.globalCompositeOperation = 'source-over'; gTmp.clearRect(0, 0, W, H); gTmp.fillStyle = '#fff'; fn(gTmp); gTmp.restore(); return cTmp; };
       for (const f of list) {
-        const fx = (f.foot[0] - x0) * S, fy = (f.foot[1] - y0) * S, s = f.unit * S, fa = f.facing || 1;
+        // cada figura se dibuja en su propio mosaico local (con margen para los desenfoques) y se suma al atlas: el costo no depende del tamaño del atlas
+        const e = ext(f), s = f.unit * S, sail = f.pose === 'sail';
+        const mg = Math.ceil(3.2 * Math.max(4.5 * s, 3 * S, (f.soft || 0.5) * S, 2.5 * S));
+        const lx0 = Math.floor((e[0] - x0) * S - mg), ly0 = Math.floor((e[1] - y0) * S - mg), lw = Math.ceil((e[2] - e[0]) * S + 2 * mg), lh = Math.ceil((e[3] - e[1]) * S + 2 * mg);
+        const [lCov, kCov] = mk(lw, lh), [lSh, kSh] = mk(lw, lh), [lLum, kLum] = mk(lw, lh), [lLit, kLit] = mk(lw, lh), [lCore, kCore] = mk(lw, lh), [lTmp, kTmp] = mk(lw, lh);
+        const tmp = (fn) => { kTmp.save(); kTmp.setTransform(1, 0, 0, 1, 0, 0); kTmp.globalCompositeOperation = 'source-over'; kTmp.clearRect(0, 0, lw, lh); kTmp.fillStyle = '#fff'; fn(kTmp); kTmp.restore(); return lTmp; };
+        const fx = (f.foot[0] - x0) * S - lx0, fy = (f.foot[1] - y0) * S - ly0, fa = f.facing || 1;
         const M = [fa * s, 0, 0, -s, fx, fy];
-        const sail = f.pose === 'sail';
         // cobertura con el desenfoque de la foto a esa profundidad
-        blurDraw(gCov, tmp((g) => RV.drawPose(g, f, M)), (f.soft || 0.5) * S);
+        blurDraw(kCov, tmp((g) => RV.drawPose(g, f, M)), (f.soft || 0.5) * S);
         // luminancia propia (gris uniforme, dilatado por el desenfoque para que el borde no tome ceros)
         const Lv = Math.round(PBS.clamp((f.L || 0.1) / 0.4, 0, 1) * 255);
-        gLum.save(); gLum.filter = `blur(${3 * S}px)`; const c1 = tmp((g) => { g.fillStyle = `rgb(${Lv},${Lv},${Lv})`; RV.drawPose(g, f, M); });
-        gLum.drawImage(c1, 0, 0); gLum.drawImage(c1, 0, 0); gLum.drawImage(c1, 0, 0); gLum.restore();
+        kLum.save(); kLum.filter = `blur(${3 * S}px)`; const c1 = tmp((g) => { g.fillStyle = `rgb(${Lv},${Lv},${Lv})`; RV.drawPose(g, f, M); });
+        kLum.drawImage(c1, 0, 0); kLum.drawImage(c1, 0, 0); kLum.drawImage(c1, 0, 0); kLum.restore();
         // lado iluminado: la figura menos la figura corrida en dirección opuesta a la luz (≈ 25 % del ancho del cuerpo)
         const dsh = (sail ? 2.5 : 5.5) * s;
         const lit = tmp((g) => { RV.drawPose(g, f, M); g.globalCompositeOperation = 'destination-out'; RV.drawPose(g, f, [M[0], 0, 0, M[3], fx + rdx * dsh, fy + rdy * dsh]); });
-        blurDraw(gLit, lit, 1.6 * s);
+        blurDraw(kLit, lit, 1.6 * s);
         // núcleo: cobertura muy desenfocada (el torso y la cabeza nuclean antes que los bordes y las extremidades)
-        blurDraw(gCore, tmp((g) => RV.drawPose(g, f, M)), 4.5 * s);
+        blurDraw(kCore, tmp((g) => RV.drawPose(g, f, M)), 4.5 * s);
         if (sail) {
-          // reflejo: un trazo corto y oscuro bajo el casco
-          gSh.save(); gSh.filter = `blur(${0.8 * S}px)`; gSh.globalAlpha = 0.4; gSh.fillRect(fx - 1.2 * s, fy + 1.5 * s, 2.2 * s, 9 * s); gSh.restore();
-          continue;
+          kSh.save(); kSh.filter = `blur(${0.8 * S}px)`; kSh.globalAlpha = 0.4; kSh.fillRect(fx - 1.2 * s, fy + 1.5 * s, 2.2 * s, 9 * s); kSh.restore();
+        } else {
+          // sombra proyectada: pegada a los pies, se aclara y ablanda con la distancia
+          const hgt = 100 * s;
+          const cast = tmp((g) => {
+            RV.drawPose(g, f, [fa * s, 0, light.kx * s, light.ky * s, fx, fy]);
+            g.globalCompositeOperation = 'destination-in';
+            const gr = g.createLinearGradient(fx, fy, fx + light.kx * hgt, fy + light.ky * hgt);
+            gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,255,255,0.62)'); gr.addColorStop(1, 'rgba(255,255,255,0.22)');
+            g.fillStyle = gr; g.fillRect(0, 0, lw, lh);
+          });
+          blurDraw(kSh, cast, 1.2 * S + 0.012 * hgt, 0.42);
+          // oclusión de contacto: banda aplanada bajo el apoyo (+0,6 D) y un halo oscuro amplio (+0,2 D)
+          const c = CONTACT[f.pose] || [-8, 8];
+          const cx0 = c[0] * fa, cx1 = c[1] * fa, cxm = (cx0 + cx1) / 2, hw = Math.abs(cx1 - cx0) * 0.5;
+          const con = tmp((g) => { g.beginPath(); g.ellipse(fx + cxm * s, fy + 0.3 * s, hw * s * 0.85, Math.max(1.2 * S, 1.5 * s), 0, 0, Math.PI * 2); g.fill(); });
+          blurDraw(kSh, con, 1.4 * S, 0.5);
+          const amb = tmp((g) => { g.beginPath(); g.ellipse(fx + cxm * s, fy + 0.6 * s, hw * s * 1.4, Math.max(1.8 * S, 2.2 * s), 0, 0, Math.PI * 2); g.fill(); });
+          blurDraw(kSh, amb, 2.5 * S, 0.16);
         }
-        // sombra proyectada: pegada a los pies, se aclara y ablanda con la distancia
-        const hgt = 100 * s;
-        const cast = tmp((g) => {
-          RV.drawPose(g, f, [fa * s, 0, light.kx * s, light.ky * s, fx, fy]);
-          g.globalCompositeOperation = 'destination-in';
-          const gr = g.createLinearGradient(fx, fy, fx + light.kx * hgt, fy + light.ky * hgt);
-          gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,255,255,0.62)'); gr.addColorStop(1, 'rgba(255,255,255,0.22)');
-          g.fillStyle = gr; g.fillRect(0, 0, W, H);
-        });
-        blurDraw(gSh, cast, 1.2 * S + 0.012 * hgt, 0.42);
-        // oclusión de contacto: banda aplanada bajo el apoyo (+0,6 D) y un halo oscuro amplio (+0,2 D)
-        const c = CONTACT[f.pose] || [-8, 8];
-        const cx0 = c[0] * fa, cx1 = c[1] * fa, cxm = (cx0 + cx1) / 2, hw = Math.abs(cx1 - cx0) * 0.5;
-        const con = tmp((g) => { g.beginPath(); g.ellipse(fx + cxm * s, fy + 0.3 * s, hw * s * 0.85, Math.max(1.2 * S, 1.5 * s), 0, 0, Math.PI * 2); g.fill(); });
-        blurDraw(gSh, con, 1.4 * S, 0.5);
-        const amb = tmp((g) => { g.beginPath(); g.ellipse(fx + cxm * s, fy + 0.6 * s, hw * s * 1.4, Math.max(1.8 * S, 2.2 * s), 0, 0, Math.PI * 2); g.fill(); });
-        blurDraw(gSh, amb, 2.5 * S, 0.16);
+        gCov.drawImage(lCov, lx0, ly0); gSh.drawImage(lSh, lx0, ly0); gLum.drawImage(lLum, lx0, ly0); gLit.drawImage(lLit, lx0, ly0); gCore.drawImage(lCore, lx0, ly0);
       }
       const cov = gCov.getImageData(0, 0, W, H).data, sh = gSh.getImageData(0, 0, W, H).data, lum = gLum.getImageData(0, 0, W, H).data;
       const lit = gLit.getImageData(0, 0, W, H).data, core = gCore.getImageData(0, 0, W, H).data;
