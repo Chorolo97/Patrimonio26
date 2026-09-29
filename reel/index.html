@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Punta Ballena, memorias del territorio — vista previa</title>
+<style>
+  :root { --bg:#1d1b19; --panel:#2a2724; --ink:#efe8dc; --muted:#b3aa9c; --accent:#c9a86a; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--ink); font:15px/1.4 system-ui, sans-serif; }
+  main { display:flex; gap:24px; height:100%; padding:16px; align-items:flex-start; justify-content:center; flex-wrap:wrap; }
+  .stage { position:relative; height:calc(100vh - 32px); aspect-ratio:9/16; max-width:100%; background:#000; box-shadow:0 8px 30px rgba(0,0,0,.5); }
+  .stage canvas { position:absolute; inset:0; width:100%; height:100%; }
+  #guides { pointer-events:none; display:none; }
+  aside { width:320px; max-width:100%; background:var(--panel); border-radius:10px; padding:16px; display:flex; flex-direction:column; gap:12px; }
+  h1 { font-size:17px; margin:0; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  button { background:#3a3632; color:var(--ink); border:1px solid #4b4640; border-radius:6px; padding:8px 12px; font:inherit; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  input[type=range] { width:100%; accent-color:var(--accent); }
+  .time { font-variant-numeric:tabular-nums; color:var(--muted); }
+  .status { font-size:13px; color:var(--muted); white-space:pre-wrap; }
+  .warn { color:#f0b87a; }
+  label { color:var(--muted); display:flex; gap:6px; align-items:center; }
+  small { color:var(--muted); }
+  @media (max-width: 760px) { .stage { height:auto; width:100%; } }
+</style>
+</head>
+<body>
+<main>
+  <div class="stage">
+    <canvas id="frame"></canvas>
+    <canvas id="guides" width="1080" height="1920"></canvas>
+  </div>
+  <aside>
+    <h1>Punta Ballena, memorias del territorio</h1>
+    <small>Vista previa editable. Los controles quedan fuera del cuadro 1080×1920.</small>
+    <div class="row">
+      <button id="play">▶ Reproducir</button>
+      <button id="restart">⟲ Reiniciar</button>
+    </div>
+    <input id="seek" type="range" min="0" step="0.0333333" value="0">
+    <div class="row time"><span id="clock">0.00 s</span> · <span id="frameNo">cuadro 0</span></div>
+    <label><input type="checkbox" id="audioOn" checked> Pista musical (si el archivo está disponible)</label>
+    <label><input type="checkbox" id="showGuides"> Mostrar zona segura (solo en pantalla)</label>
+    <div id="status" class="status">Cargando…</div>
+  </aside>
+</main>
+<audio id="aud" preload="auto"></audio>
+<script src="src/config.js"></script>
+<script src="src/lib.js"></script>
+<script src="src/figures.js"></script>
+<script src="src/scenes.js"></script>
+<script src="src/reel.js"></script>
+<script>
+(async () => {
+  const cfg = window.REEL_CONFIG;
+  const $ = (id) => document.getElementById(id);
+  const status = $('status');
+  const seek = $('seek');
+  seek.max = cfg.duration;
+  const reel = new PB.Reel($('frame'), cfg);
+  try { await reel.load(); } catch (e) { status.textContent = 'Error: ' + e.message; throw e; }
+
+  // Audio opcional: el reel funciona mudo si el archivo falta.
+  const aud = $('aud');
+  let audioOk = false;
+  aud.src = cfg.audio.src;
+  aud.addEventListener('canplay', () => { audioOk = true; showStatus(); }, { once: true });
+  aud.addEventListener('error', () => { audioOk = false; showStatus(); });
+  const A = cfg.audio;
+  const gainAt = (t) => A.volume * PB.clamp(Math.min(t / A.fadeIn, (cfg.duration - t) / A.fadeOut), 0, 1);
+
+  function showStatus() {
+    const lines = [];
+    lines.push(`${cfg.width}×${cfg.height} · ${cfg.fps} fps · ${cfg.duration} s`);
+    lines.push(audioOk ? `Audio: fragmento desde ${A.AUDIO_START_SECONDS} s (a verificar al oído).` : 'Audio: pendiente (reproducción muda).');
+    status.innerHTML = lines.join('\n') + (reel.warnings.length ? '\n<span class="warn">' + reel.warnings.join('\n') + '</span>' : '');
+  }
+  showStatus();
+
+  // Guías de zona segura (otro lienzo, nunca forma parte del render).
+  const g = $('guides').getContext('2d');
+  const sz = cfg.safeZone;
+  g.strokeStyle = 'rgba(255,80,80,.8)'; g.lineWidth = 3; g.setLineDash([16, 10]);
+  g.strokeRect(sz.x0, sz.y0, sz.x1 - sz.x0, sz.y1 - sz.y0);
+  $('showGuides').onchange = (e) => ($('guides').style.display = e.target.checked ? 'block' : 'none');
+
+  let t = 0, playing = false, last = 0;
+  const draw = () => {
+    reel.render(t);
+    seek.value = t;
+    $('clock').textContent = t.toFixed(2) + ' s';
+    $('frameNo').textContent = 'cuadro ' + Math.min(cfg.duration * cfg.fps - 1, Math.floor(t * cfg.fps));
+  };
+  const syncAudio = (force) => {
+    if (!audioOk || !$('audioOn').checked) { aud.pause(); return; }
+    const want = A.AUDIO_START_SECONDS + t;
+    if (force || Math.abs(aud.currentTime - want) > 0.15) aud.currentTime = want;
+    aud.volume = gainAt(t);
+    if (playing && aud.paused) aud.play().catch(() => {});
+    if (!playing && !aud.paused) aud.pause();
+  };
+  const loop = (now) => {
+    if (!playing) return;
+    t += (now - last) / 1000;
+    last = now;
+    if (t >= cfg.duration) { t = cfg.duration; playing = false; $('play').textContent = '▶ Reproducir'; }
+    draw();
+    syncAudio(false);
+    if (playing) requestAnimationFrame(loop);
+  };
+  const play = () => {
+    if (t >= cfg.duration - 0.01) t = 0;
+    playing = true; last = performance.now();
+    $('play').textContent = '❚❚ Pausar';
+    syncAudio(true);
+    requestAnimationFrame(loop);
+  };
+  const pause = () => { playing = false; $('play').textContent = '▶ Reproducir'; syncAudio(false); };
+  $('play').onclick = () => (playing ? pause() : play());
+  $('restart').onclick = () => { t = 0; draw(); syncAudio(true); };
+  seek.oninput = () => { t = parseFloat(seek.value); draw(); syncAudio(true); };
+  $('audioOn').onchange = () => syncAudio(true);
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'Space') { e.preventDefault(); playing ? pause() : play(); }
+    if (e.code === 'ArrowRight') { t = Math.min(cfg.duration, t + 1 / cfg.fps); draw(); syncAudio(true); }
+    if (e.code === 'ArrowLeft') { t = Math.max(0, t - 1 / cfg.fps); draw(); syncAudio(true); }
+  });
+  draw();
+})();
+</script>
+</body>
+</html>

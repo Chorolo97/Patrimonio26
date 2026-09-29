@@ -1,0 +1,14 @@
+{
+  "name": "patrimonio26-reel-punta-ballena",
+  "private": true,
+  "description": "Reel «Punta Ballena, memorias del territorio» — Día del Patrimonio 2026 (animación programada por capas).",
+  "scripts": {
+    "preview": "node tools/serve.js",
+    "export": "node tools/export.js",
+    "export:audio": "node tools/export.js --audio",
+    "stills": "node tools/export.js --stills 3,10,17.5,24.5,29.5,33,38"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.0"
+  }
+}

@@ -1,0 +1,5 @@
+node_modules/
+out/
+# Audio de la canción: licencia no verificada; no se versiona.
+reel/assets/audio/*
+!reel/assets/audio/LEEME.md
