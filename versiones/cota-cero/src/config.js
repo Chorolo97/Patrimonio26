@@ -30,7 +30,7 @@ window.REEL_CONFIG = {
     bakeRes: 2048, edtRes: 1024,
     spine: [[-420, 3300], [-260, 2500], [-110, 1700], [10, 1000], [70, 420], [55, 60], [40, -40]],
     crest: [95, 88, 74, 62, 46, 18, 0],
-    Ww: [35, 55], We: [250, 420], plateau: [40, 90], drop: 6,
+    Ww: [44, 62], We: [250, 420], plateau: [40, 90], drop: 6,
     notches: [{ y: 180, w: 11, d: 8 }, { y: 330, w: 14, d: 9 }, { y: 520, w: 9, d: 7 }, { y: 760, w: 13, d: 10 }],
     // Costa de las bahías: la playa oeste (Portezuelo) pasa por los pies de la cámara oblicua.
     westBeach: [[-150, 1262], [-330, 1330], [-470, 1378], [-640, 1450], [-900, 1640], [-1150, 1900], [-1400, 2300], [-1600, 2750]],
@@ -55,13 +55,13 @@ window.REEL_CONFIG = {
       contourStep: 3, near: 120, box: [-330, -200, 700, 1250],
       sky: { spacing: 14, topW: 2.6, clouds: [[360, 70], [700, 60]] },
       sea: { dlog: 0.056, waveAmp: 5, swashM: 3, swellFrom: 160 },
-      echo: { aspect: 2.6, rho0: 48, lambda: 0.3, speed: 0.62, gap: 7, front: 0.3, left: 260 },
+      echo: { aspect: 3.0, rho0: 54, lambda: 0.26, speed: 0.62, gap: 7, front: 0.3, left: 260 },
     },
   },
 
   fronts: {
     M1: { t: [7.6, 8.6], noise: 20, feather: 35, line: 2 },
-    M2: { t: [12.8, 15.05], dur: [12.8, 15.0], noise: 30, feather: 60, line: 3 },
+    M2: { t: [12.8, 15.05], keys: [[12.8, 0], [13.1, 0.11], [14.9, 0.77], [15.05, 1.0]], line: 3.8 },
     M3: { t: [18.0, 19.0], noise: 16, feather: 40, line: 2.5 },
   },
 

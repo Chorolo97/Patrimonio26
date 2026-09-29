@@ -39,7 +39,7 @@ const vec2 SP[${n}] = vec2[${n}](${sp});
 const float SC[${n}] = float[${n}](${sc});
 float ridged(vec2 p){ float s=0., a=.5; for(int i=0;i<4;i++){ float q = 1.-abs(2.*vnoise(p)-1.); s += a*q*q; p = p*2.03+vec2(3.1,1.7); a*=.5; } return s/.9375; }
 float smax(float a, float b, float k){ float h = clamp(.5+.5*(a-b)/k, 0., 1.); return mix(b, a, h) + k*h*(1.-h); }
-float westP(float sd, float pw, float Ww){ float u = max(0., -sd - .3*pw)/Ww; return 1. - smoothstep(.35, 1., u); }
+float westP(float sd, float pw, float Ww){ float u = max(0., -sd - .3*pw)/Ww; return 1. - smoothstep(.12, 1., u); }
 void main(){
   vec2 p = mix(ext.xy, ext.zw, uv);
   float best = 1e9, sd = 0., hc = 0., sa = 0., acc = 0.;

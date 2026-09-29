@@ -43,8 +43,8 @@ float front(vec2 p, out float tarr, out float perp){
   vec2 d = menDir(); vec2 r = p - vec2(540., 1920.);
   float proj = dot(r, d); perp = dot(r, vec2(-d.y, d.x));
   // forma irregular: dos octavas de ruido (≈ 600 y 200 px) y una curvatura suave
-  float n1 = texture(uNoise, vec2(perp/2400. + uMen2.z, 0.13 + 0.07*uMen2.z)).b - 0.5;
-  float n2 = texture(uNoise, vec2(perp/1650. + 0.7*uMen2.z, 0.61)).r - 0.5;
+  vec4 nn = texture(uNoise, vec2(perp/2400. + uMen2.z, 0.13 + 0.07*uMen2.z));
+  float n1 = nn.b - 0.5, n2 = nn.r - 0.5;
   float n = uMen2.y * (1.6*n1 + 0.9*n2) + uMen2.x * (perp/540.)*(perp/540.);
   tarr = uMen.x + (proj + n - uMen.y) / uMen.z;
   return (uTr - tarr) * uMen.z; // px por detrás del frente
@@ -100,14 +100,14 @@ void main(){
     tau = uWt - wAt(tarr);
     dev = 1. - exp(-max(0., tau - uMen3.z)/uMen3.y);
     devFig = 1. - exp(-max(0., tau - 0.03)/0.3);
-    devFig = max(devFig, uMen3.x * smoothstep(20., 420., er));
+    devFig = max(devFig, uMen3.x * smoothstep(0., 200., er));
     dev = max(dev, uMen3.w * smoothstep(0., 90., er) * step(0., tau)); // el papel mojado se ve más hondo enseguida
   }
   float Dbg, Df = 0., figC = 0., foam = 0., arch = 0.;
 #if DUAL
   // relevo llevado por el frente: delante sólo la copia vieja; en la banda de lavado se disuelve; detrás sólo la nueva
   float wA = 1. - smoothstep(0., 70., er);
-  float wF = 1. - smoothstep(0., 26., er);
+  float wF = 1. - smoothstep(0., 50., er);
   Dbg = 0.;
   float cB = 0.;
   if (er > 0.) { PR B = shadeB(pr, dev, devFig); Dbg = B.Dbg; Df = B.Df; cB = B.c; foam = B.foam; }
@@ -169,10 +169,12 @@ void main(){
     float trough = smoothstep(thick, thick + 1.5, er) * (1. - smoothstep(thick + 5., thick + 8., er));
     float r1 = er - (34. + 7.*nb2), r2 = er - (68. + 12.*nb2);
     float rip = 0.065*exp(-r1*r1/3.) - 0.045*exp(-(r1 - 3.2)*(r1 - 3.2)/4.) + 0.04*exp(-r2*r2/4.) - 0.03*exp(-(r2 - 3.4)*(r2 - 3.4)/5.);
-    float gl = step(0., er) * exp(-er/16.) * 0.08;
+    L *= 1. - 0.13*step(0., er)*exp(-er/110.);   // papel mojado: gris, nunca un halo claro
+    float midL = 4.*L*(1. - L);
+    float gl = step(0., er) * exp(-er/16.) * 0.08 * midL;
     float wb = step(0., er) * (1. - smoothstep(0., 230., er));
     L *= (1. - 0.13*trough) * (1. + rip*step(0., er));
-    L = (0.5 + (L - 0.5)*(1. + 0.14*wb)) * (1. - 0.07*wb) + gl;
+    L = (L + (L - 0.5)*0.14*wb*midL) * (1. - 0.07*wb) + gl;
   }
   vec3 col = toneColor(clamp(L, 0., 1.), archAmt);
   // plateado: brillo frío en las zonas densas junto a los bordes (sólo archivo)
@@ -193,7 +195,7 @@ void main(){
 // figura: cobertura × nucleación (grumos que se juntan, del núcleo al borde), luminancia propia bajo la misma luz
 void FNAME_fig(vec4 F, float devF, vec2 q, float lightMul, uint sd, inout PR r){
   if (F.r < 0.004 || devF <= 0.) return;
-  float thr = 0.6*(1. - F.a) + 0.4*nucN(q, sd);
+  float thr = 0.78*(1. - F.a) + 0.22*nucN(q, sd);
   float nuc = smoothstep(thr - 0.035, thr + 0.035, devF*1.1);
   float cc = F.r * nuc;
   if (cc > r.c) {
@@ -213,7 +215,7 @@ PR FNAME(vec2 p, float dev, float devFig){
 #if !IS_GRUTA
   if (water > 0.01) q2.x += 2.0 * sin(q.y*0.11 + uS*2.3) * water * live;
   float lowB = smoothstep(1250., 1450., p.y);
-  vec4 P = texture(PH, vec2(q2.x*isz.x, 1. - q2.y*isz.y), 1.1*lowB);
+  vec4 P = texture(PH, vec2(q2.x*isz.x, 1. - q2.y*isz.y));
 #else
   vec4 P = texture(PH, vec2(q2.x*isz.x, 1. - q2.y*isz.y));
 #endif
@@ -240,37 +242,47 @@ PR FNAME(vec2 p, float dev, float devFig){
 #if FOAM
       deep *= 1. - 0.34*uFoam.y;   // sombra de la mañana sobre la bahía: el blanco de la espuma tiene contra qué leerse
 #endif
-      Ll *= mix(1., deep, water * live);
-      Ll *= 1. + (0.08*wv + 0.05*wv2) * amp * water * live;
+      float seaM = smoothstep(0.08, 0.45, water) * (1. - smoothstep(1000., 1100., q.y));
+      Ll *= mix(1., deep, seaM * live);
+      Ll *= 1. + (0.08*wv + 0.05*wv2) * amp * seaM * live;
 #if FOAM
       if (uFoam.x > 0.) {
         float dR = P.b * 255.;
-        // orilla verdadera: la roca está ARRIBA del agua (pie de la sierra, pie del acantilado, borde alto de la charca);
-        // el borde superior de la roca grande recorta el mar de atrás y no lleva espuma
-        float dUp = texture(PH, vec2(q.x*isz.x, 1. - (q.y - 7.)*isz.y)).b * 255.;
-        float dDn = texture(PH, vec2(q.x*isz.x, 1. - (q.y + 7.)*isz.y)).b * 255.;
-        float wl = smoothstep(-0.15, 0.55, (dDn - dUp) / 14.);
-        float pool = smoothstep(1290., 1320., q.y);
-        wl = max(wl, pool);
-        float pers = mix(0.55, 1., smoothstep(612., 780., q.y));
-        vec4 nz = texture(uNoise, q/vec2(150., 60.) + vec2(0., uS*0.01));
-        float dRn = dR + 5.*(nz.r - 0.5);
-        // encaje: bordes de celdas alargados según la orilla, en bandas que derivan mar adentro con S(t)
-        float ce = cellEdge(vec2(q.x/30., (dRn - uS*5.5)/(8.5*pers)));
-        float lace = 1. - smoothstep(0.05, 0.17, ce);
-        float bands = 0.5 + 0.5*sin((dRn - uS*7.)/(6.5*pers));
-        float env = exp(-dRn/(46.*pers)) * smoothstep(0.8, 3., dRn);
-        lace *= env * (0.35 + 0.65*bands) * wl;
-        // línea gruesa y rota al pie de la roca
-        float wln = 5.5 * (1. + 0.3*(2.*uLow - 1.));
-        float froth = (1. - smoothstep(wln*0.5, wln, dRn)) * smoothstep(0.3, 0.52, texture(uNoise, vec2(q.x/1400., 0.71 + q.y/3000.)).a) * wl;
         float g = uFoam.x;
-        float f = max(lace*0.97, froth) * g * smoothstep(0.35, 0.9, water);
-        // agua oscura entre los hilos (el encaje se lee por contraste)
-        Ll *= 1. - 0.14 * env * wl * g * (1. - lace);
-        // la charca al pie de la roca: brillo que tiembla
-        Ll *= 1. + 0.06 * pool * sin(q.x*0.09 + q.y*0.05 + uS*3.1) * g;
-        r.foam = f * (0.9 + 0.1*uHigh);
+        float pool = smoothstep(1250., 1290., q.y);
+        vec4 nz = texture(uNoise, q/vec2(150., 60.) + vec2(0., uS*0.01));
+        if (pool < 0.5) {
+          // orilla verdadera: la roca está ARRIBA del agua (pie de la sierra, pie del acantilado);
+          // el borde superior de la roca grande recorta el mar de atrás y no lleva espuma
+          float dUp = texture(PH, vec2(q.x*isz.x, 1. - (q.y - 7.)*isz.y)).b * 255.;
+          float dDn = texture(PH, vec2(q.x*isz.x, 1. - (q.y + 7.)*isz.y)).b * 255.;
+          float wl = smoothstep(-0.15, 0.55, (dDn - dUp) / 14.);
+          float pers = mix(0.55, 1., smoothstep(612., 780., q.y));
+          float dRn = dR + 6.*(nz.r - 0.5);
+          // encaje: bordes de celdas deformados y estirados según la orilla, rotos por ruido, en bandas que derivan mar adentro
+          vec2 lc = vec2(q.x/26., (dRn - uS*5.5)/(7.5*pers));
+          lc += 0.55*vec2(nz.g - 0.5, nz.a - 0.5)*2.;
+          float ce = cellEdge(lc);
+          float wid = mix(0.05, 0.13, nz.b) * (1.25 - 0.5*smoothstep(0., 50., dRn));
+          float lace = 1. - smoothstep(wid*0.6, wid, ce);
+          lace *= smoothstep(0.25, 0.55, texture(uNoise, q/vec2(90., 34.) - vec2(uS*0.02, 0.)).g);
+          float bands = 0.5 + 0.5*sin((dRn - uS*7.)/(6.5*pers) + 2.*nz.r);
+          float env = exp(-dRn/(52.*pers)) * smoothstep(0.8, 3., dRn);
+          lace *= env * (0.3 + 0.7*bands) * wl;
+          // línea gruesa y rota al pie de la roca (6–8 px)
+          float wln = 6. * (1. + 0.3*(2.*uLow - 1.));
+          float froth = (1. - smoothstep(wln*0.45, wln, dRn)) * smoothstep(0.3, 0.52, texture(uNoise, vec2(q.x/1400., 0.71 + q.y/3000.)).a) * wl;
+          float f = max(lace, froth) * g * smoothstep(0.35, 0.9, water);
+          // agua oscura entre los hilos (el encaje se lee por contraste)
+          Ll *= 1. - 0.12 * env * wl * g * (1. - lace);
+          r.foam = f * (0.9 + 0.1*uHigh);
+        } else {
+          // charca al pie de la roca grande: brillo que tiembla y un anillo de espuma que respira, roto
+          Ll *= 1. + 0.06 * sin(q.x*0.09 + q.y*0.05 + uS*3.1) * g * water;
+          float wr = 5. * (1. + 0.3*(2.*uLow - 1.));
+          float ring = (1. - smoothstep(wr*0.4, wr, dR + 4.*(nz.r - 0.5))) * smoothstep(0.4, 0.6, nz.b);
+          r.foam = ring * 0.8 * g * smoothstep(0.3, 0.8, water);
+        }
       }
 #endif
     }
@@ -296,7 +308,7 @@ PR FNAME(vec2 p, float dev, float devFig){
 #else
   {
     // gruta: la boca es una abertura negra; lámina de resaca que sube por la arena; cáusticas en las paredes bajas
-    Ll *= 1. - 0.5*skyM*(0.94 + 0.06*sin(uT*1.1));
+    Ll *= 1. - 0.55*skyM*(1. - smoothstep(0.14, 0.5, Ll))*(0.94 + 0.06*sin(uT*1.1));
     float gp = uGrottoPhase;
     float reach = (40. + 150. * pow(0.5 + 0.5*sin(gp), 1.2)) * (0.75 + 0.5*uLow);
     float nx = texture(uNoise, vec2(q.x/900., gp*0.02)).r - 0.5;
@@ -357,7 +369,8 @@ PR FNAME(vec2 p, float dev, float devFig){
     D = mix(Da, Dt, dev);
   } else D = Dt;
 #else
-  D = Dt * dev;
+  // lo más denso cruza primero: las sombras llegan antes que los medios y las luces (no es un fundido)
+  D = Dt * pow(dev, mix(2.4, 0.55, smoothstep(0.15, 0.9, Dt)));
 #endif
   // figuras: la plata más densa de la copia, con su sombra pegada a los pies
   vec2 aq = (q - boxA.xy) / boxA.zw;

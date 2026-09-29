@@ -17,9 +17,16 @@ vec2 uvOf(vec2 px){ return vec2(px.x/1080., 1. - px.y/1920.); }
 float tooth(vec2 px){ return (vnoise(px/140.)*.55 + vnoise(px/31. + 7.)*.25 + hash21(floor(px))*.2 - .5)*2.; }
 `;
 
+  // Ruido fijo precalculado (una vez, en el inicio): pantalla (diente, sangrado, encaje, deformación) y búfer oblicuo
+  SH.noiseScreen = SH.common + `
+void main(){ vec2 px = pxOf(uv); o = vec4(clamp(tooth(px)*.5 + .5, 0., 1.), vnoise(px/9.), vnoise(px/7. + 3.), vnoise(px/70.)); }`;
+  SH.noiseBuf = SH.common + `
+uniform float BH;
+void main(){ vec2 pb = vec2(uv.x*1080., (1. - uv.y)*BH); o = vec4(vnoise(pb/9.), vnoise(pb/7.), vnoise(pb/60.), vnoise(pb*vec2(1./240., 1./40.))); }`;
+
   // ---------------- PLANTA ----------------
   SH.plan = SH.common + `
-uniform sampler2D bake, aux, hach;
+uniform sampler2D bake, aux, hach, nzS;
 uniform vec4 ext;          // mundo x0,y0,x1,y1
 uniform vec4 fr;           // x0, yTop, mpp, zoom
 uniform vec2 tipPx;        // punta en px (zoom 1)
@@ -51,7 +58,8 @@ void main(){
   float h = B.r, rock = B.g, sandM = B.b, D = B.a;
   float mpp = fr.z/fr.w;                           // m por px en pantalla
   float Dpx = D/mpp;
-  float wob = (vnoise(px/9.) - .5)*.7;             // sangrado fijo ±0,35 px
+  vec4 NS = texture(nzS, uv);
+  float wob = (NS.g - .5)*.7;                      // sangrado fijo ±0,35 px
 
   // ---- mar: líneas de corriente ----
   float Delta = 14.*fr.z;                          // 14 px en metros (zoom 1)
@@ -87,8 +95,9 @@ void main(){
   float ring = lineCov(ringD, ringHW*ringTaper)*ringA;
   // cota cero: de noche un corte de espuma de 5–6 px con borde de encaje roto hacia el mar; de día la línea de agua en tinta
   float laceC = (vnoise(px*mix(1./10., 1./6., cen)) - .5)*2.;
-  float coastN = max(lineCov(abs(Dpx - .6), 1.7*wmul + wob*.3), step(1.5, Dpx)*step(Dpx, 4.2 + 2.2*laceC)*step(.34, vnoise(px/7. + 3.)));
-  float cliffRim = smoothstep(.4, .7, texture(bake, bu + vec2(.0022, 0.)).g)*lineCov(abs(Dpx + .4), 2.)*step(abs(Dpx), 6.);
+  float coastN = max(lineCov(abs(Dpx - .6), 1.7*wmul + wob*.3), step(1.5, Dpx)*step(Dpx, 4.2 + 2.2*laceC)*step(.34, NS.b));
+  float cliffRim = 0.;
+  if (day < .5 && abs(Dpx) < 6.) cliffRim = smoothstep(.4, .7, texture(bake, bu + vec2(.0022, 0.)).g)*lineCov(abs(Dpx + .4), 2.);
   float coast = day > .5 ? lineCov(abs(Dpx), 1.3*wmul + wob*.4) : max(coastN, cliffRim);
 
   // ---- tierra ----
@@ -117,14 +126,14 @@ void main(){
 
   vec3 col;
   if (day < .5) {
-    col = cPlate*(1. + toothAmt*tooth(px));
+    col = cPlate*(1. + toothAmt*(NS.r*2. - 1.));
     col = mix(col, cSea, seaL*(1. - ring)*(1. - land));
     col = mix(col, cFoam, max(ring, coast)*(1. - land*.0));
     col = mix(col, cLand*.93, sandC*.9);
     col = mix(col, cLand, max(cont, hachC));
     col = mix(col, cTrail, trailC);
   } else {
-    col = cPaper*(1. + grainAmt*tooth(px))*(1. - toneAmt);
+    col = cPaper*(1. + grainAmt*(NS.r*2. - 1.))*(1. - toneAmt);
     float gap = ring;                                // la espuma es papel
     col = mix(col, cSeaD, seaL*(1. - max(gap, onGap))*(1. - land));
     col = mix(col, cGranite, coast*.9);
@@ -141,7 +150,7 @@ void main(){
 (function () {
   const SH = window.CC_SH;
   SH.grotto = SH.common + `
-uniform sampler2D gro;
+uniform sampler2D gro, nzS;
 uniform vec2 zc; uniform float zoom, shim, boneMul, t;
 uniform vec3 cPlate, cLand, cFoam; uniform float toothAmt;
 void main(){
@@ -150,7 +159,7 @@ void main(){
   vec4 g = texture(gro, vec2(P.x/1080., 1. - P.y/1920.));
   float s = clamp(.5 + shim*(vnoise(P/340. + vec2(t*.05, 0.)) - .5)*2., 0., 1.);
   float stroke = mix(g.r, g.g, s);
-  vec3 col = cPlate*(1. + toothAmt*tooth(px));
+  vec3 col = cPlate*(1. + toothAmt*(texture(nzS, uv).r*2. - 1.));
   vec3 bone = cLand*boneMul;
   col = mix(col, bone*.94, g.b);
   col = mix(col, bone, stroke);
@@ -206,7 +215,7 @@ void main(){
 (function () {
   const SH = window.CC_SH;
   SH.oblique = (waterGLSL) => SH.common + `
-uniform sampler2D land, stat, dyn;
+uniform sampler2D land, stat, dyn, nzS, nzB;
 uniform float yOff, ybh, BH, f, cz, t, S, low, wmul, echoFront, echoPhase, echoAmp, echoLeft, echoT0, swash, closeK, clearK, decayK;
 uniform vec2 tipB;
 uniform vec4 shipBox; uniform float shipBob;
@@ -235,11 +244,15 @@ void main(){
   vec4 L = texture(land, tu);
   vec4 Sx = texture(stat, tu);
   vec4 Dy = texture(dyn, vec2(pbs.x/1080., 1. - pbs.y/BH));
-  float wob = (vnoise(pb/9.) - .5)*.7;
+  vec4 NS = texture(nzS, uv), NB = texture(nzB, tu);
+  float wob = (NB.r - .5)*.7;
   // cierre: el cielo rayado se acorta desde el centro del bloque hacia afuera (nunca se agrisa); abajo, borde orgánico
-  float warp = (vnoise(px/70.) - .5)*26.;
-  float clearIn = step(sdRBox(px - clr.xy, vec2(1100.)*clearK, clr.w*clearK) + warp, 0.)*step(px.y + warp*.6, clr.z)*step(.001, clearK);
-  vec3 col = cPaper*(1. + grainAmt*tooth(px))*(1. - toneAmt);
+  float warp = (NS.a - .5)*26.;
+  // cada raya del cielo se retira desde el centro del bloque hacia sus dos puntas (largo desparejo por raya)
+  float lineId = floor(pb.y/skyP.x + .5);
+  float reach = clearK*760. + (hash21(vec2(lineId, 7.)) - .5)*140.*clearK - abs(px.y - clr.y)*.35*(1. - clearK);
+  float clearIn = step(abs(px.x - clr.x), reach)*step(px.y + warp*.6, clr.z)*step(.001, clearK);
+  vec3 col = cPaper*(1. + grainAmt*(NS.r*2. - 1.))*(1. - toneAmt);
 
   float below = pb.y - ybh;
   float skyC = 0., seaC = 0., gapC = 0., sandC = 0., edgeC = 0.;
@@ -252,7 +265,7 @@ void main(){
     float c3 = exp(-pow((above - 860. + .26*pb.x + 14.*sin(pb.x/200.))/60., 2.));
     float cl = c1 + c2 + c3;
     float glow = 1. - exp(-pow(length((vec2(pb.x, above) - vec2(120., 380.))/vec2(520., 300.)), 2.));
-    float hw = (skyP.y*.5*pow(fromTop, 1.1)*mix(.35, 1., glow) + 1.2*cl*(vnoise(pb*vec2(1./240., 1./40.)) - .38)*2.)*wmul;
+    float hw = (skyP.y*.5*pow(fromTop, 1.1)*mix(.35, 1., glow) + 1.2*cl*(NB.a - .38)*2.)*wmul;
     skyC = lineCov(abs(fract(pb.y/skyP.x + .5) - .5)*skyP.x, max(0., hw + wob*.3*fromTop))*smoothstep(0., 40., above)*(1. - clearIn);
   } else {
     float dw = waterD(pb.x);
@@ -273,11 +286,11 @@ void main(){
       float fw = max(fwidth(n), 1e-5);
       float lod = max(0., log2(fw*13.));
       float L0 = floor(lod), fr = lod - L0;
-      float hwS = (1.2 + .2*vnoise(pb/60.) + wob*.4)*wmul;
+      float hwS = (1.2 + .2*NB.b + wob*.4)*wmul;
       float c0 = lineCov(isoDist(n/exp2(L0)), hwS), c1 = lineCov(isoDist(n/exp2(L0 + 1.)), hwS);
       seaC = mix(c0, c1, smoothstep(.35, .65, fr))*step(13., below)*step(3., yEdge - pb.y);
       // orilla: línea de agua (tinta de mar) y resaca en papel, con bordes de encaje, siguiendo la curva de la playa
-      float lace = (vnoise(pb/7.) - .5)*2.2;
+      float lace = (NB.g - .5)*2.2;
       float brk = step(.2, vnoise(vec2(pb.x/23., 3.)));
       for (int k = 0; k < 3; k++) {
         float dk = dEdge + .5 + float(k)*(.9 + .45*float(k));
@@ -303,7 +316,7 @@ void main(){
         float vis = step(along, cutU)*step(along, 2.)*echoAmp;
         float thin = (1. - .2*clamp(er - 4.5, 0., 3.))*(q.x < 0. ? clamp((leftEnd + q.x)/90., 0., 1.) : 1.);
         // línea de granito (la misma tinta que la pared) con un halo de papel que corta el rayado del mar
-        float inkE = lineCov(abs(sdp), (1.75 + .2*low)*thin + wob*.3)*vis;
+        float inkE = lineCov(abs(sdp), (2.1 + .25*low)*thin + wob*.3)*vis;
         float haloE = lineCov(abs(sdp), (echoP.w*.5 + 1.8)*thin)*vis;
         // cota cero: la orilla de la punta es el primer eco (siempre tallada desde que empiezan)
         float coast0 = lineCov(qy, 1.6)*step(-leftEnd*.8, q.x)*step(q.x, 4.)*step(along, cutU + 2.)*echoAmp;

@@ -83,15 +83,16 @@
     });
     // histéresis del tono a lo largo de cada línea: un trazo que empezó sigue hasta que el tono baja del umbral inferior,
     // y ningún tramo mide menos de 30 px: líneas de fractura continuas o plancha limpia, nunca bloques picados
-    const runs = (lines, hi, lo, minPx) => {
+    const runs = (lines, thr, lo, minPx) => {
+      // tono suavizado a lo largo de la línea (±15 px, simétrico: sin dirección), huecos < 20 px cerrados, tramos < minPx fuera
       const out = [];
       for (const Ln of lines) {
-        let on = false, cur = null;
-        for (const p of Ln) {
-          const tt = tone(p[0], p[1]);
-          if (!on && tt > hi) { on = true; cur = [p]; } else if (on && tt < lo) { on = false; if (cur.length * 2 >= minPx) out.push(cur); cur = null; } else if (on) cur.push(p);
-        }
-        if (on && cur.length * 2 >= minPx) out.push(cur);
+        const n = Ln.length, tv = Ln.map((p) => tone(p[0], p[1])), on = new Uint8Array(n);
+        let acc = 0; const w = 7;
+        for (let i = 0; i < n; i++) { let sum = 0, c = 0; for (let j = Math.max(0, i - w); j <= Math.min(n - 1, i + w); j++) { sum += tv[j]; c++; } on[i] = sum / c > thr ? 1 : 0; }
+        for (let i = 0; i < n; ) { if (on[i]) { i++; continue; } let j = i; while (j < n && !on[j]) j++; if (i > 0 && j < n && j - i < 10) for (let k = i; k < j; k++) on[k] = 1; i = j; }
+        for (let i = 0; i < n; ) { if (!on[i]) { i++; continue; } let j = i; while (j < n && on[j]) j++; if ((j - i) * 2 >= minPx) out.push(Ln.slice(i, j)); i = j; }
+        acc;
       }
       return out;
     };
@@ -101,7 +102,7 @@
     // tono → ancho: paredes oscuras un juego fino, medias uno ancho, roca iluminada y arena un segundo juego a 70°
     const wMain = (p) => { const tt = tone(p[0], p[1]); const w = minW + (maxW - minW) * Math.pow(Math.max(0, (tt - 0.3) / 0.55), 1.1); return (w + wob(p)) * edge(p[0], p[1]); };
     const wSec = (p) => { const tt = tone(p[0], p[1]); return (minW + Math.max(0, tt - 0.74) * 5 + wob(p)) * edge(p[0], p[1]); };
-    const mainR = runs(main, 0.19, 0.11, 30), secR = runs(second, 0.76, 0.7, 30);
+    const mainR = runs(main, 0.14, 0, 30), secR = runs(second, 0.74, 0, 30);
     function strokes(mul) {
       const c = U.canvas(W, H), x = c.getContext('2d', { willReadFrequently: true });
       x.fillStyle = '#fff';

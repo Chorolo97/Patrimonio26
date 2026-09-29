@@ -49,6 +49,9 @@ window.createReel = async function (canvas, cfg) {
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
   const draw = (prog, u, target) => { gl.bindVertexArray(null); gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf); G.draw(prog, u, target); };
 
+  // ruido fijo en texturas (se calcula una vez)
+  const nzS = G.target(cfg.width, cfg.height);
+  draw(G.program(SH.noiseScreen), {}, nzS);
   let t1 = performance.now();
   const terr = window.CC_TERRAIN.build(G, cfg, rng);
   timings.terrain = performance.now() - t1; timings.terrainParts = terr.timing;
@@ -86,7 +89,7 @@ window.createReel = async function (canvas, cfg) {
     const em = cfg.timeline.emerge;
     const E = day ? 200 : 95 * PBS.ease((t - em[0]) / (em[1] - em[0]));
     return {
-      bake: terr.bakeTex, aux: terr.auxTex, hach: day ? hachDay : hachNight, ext,
+      bake: terr.bakeTex, aux: terr.auxTex, hach: day ? hachDay : hachNight, nzS: nzS.tex, ext,
       fr: [fr.x0, fr.yTop, fr.mpp, zoom], tipPx, t, S: Sof(t), E: t < em[0] && !day ? -10 : E, day: day ? 1 : 0,
       wmul: 0.9 + 0.2 * at('rmsSmooth', t), low: at('lowSmooth', t), cen: audio.missing ? 0.5 : PBS.clamp(audio.avg('centroidSmooth', t, 2), 0, 1),
       ringOpen: day ? 1 : PBS.smooth((t - em[0]) / (em[1] - em[0])), trailProg: day ? 1.01 : PBS.clamp((t - cfg.timeline.trailCut[0]) / (cfg.timeline.trailCut[1] - cfg.timeline.trailCut[0]), 0, 1.01),
@@ -104,6 +107,8 @@ window.createReel = async function (canvas, cfg) {
   const statTex = U.rawTexture(G, obFig.stat, cfg.width, cam.BH);
   const dynTex = U.rawTexture(G, obFig.dyn, cfg.width, cam.BH);
   const progObl = G.program(SH.oblique(OB.waterGLSL()));
+  const nzB = G.target(cfg.width, cam.BH);
+  draw(G.program(SH.noiseBuf), { BH: cam.BH }, nzB);
   const rtop = OB.ridgeTop(cfg, terr, cam);
   timings.oblique = performance.now() - t1; timings.obliqueParts = { land: landB.ms, figs: obFig.ms };
   timings.ridgeTopAtClosing = +(rtop.top - (cam.ybh - ov.horizon[1][1])).toFixed(1);
@@ -143,7 +148,7 @@ window.createReel = async function (canvas, cfg) {
     const S = Sof(t), low = at('lowSmooth', t);
     const eOn = t >= cfg.timeline.echoes;
     return {
-      land: landB.tex, stat: statTex, dyn: dynTex,
+      land: landB.tex, stat: statTex, dyn: dynTex, nzS: nzS.tex, nzB: nzB.tex,
       yOff: cam.ybh - hY, ybh: cam.ybh, BH: cam.BH, f: cam.f, cz: cam.C[2], t, S, low, wmul: 0.9 + 0.2 * at('rmsSmooth', t),
       echoFront: E.front, echoT0: cfg.timeline.echoes, echoLeft: E.left,
       echoPhase: E.speed * (S - echoS0), echoAmp: eOn ? 1 : 0,
@@ -162,7 +167,7 @@ window.createReel = async function (canvas, cfg) {
   function grottoUniforms(t) {
     const gv = cfg.views.grotto;
     const v = at('voiceSmooth', t);
-    return { gro: groTex, zc: gv.center, zoom: ramp(t, gv.push), shim: PBS.clamp((v - 0.15) / 0.3, 0, 1), boneMul: 1 + 0.04 * PBS.clamp((v - 0.33) / 0.2, -1, 1), t, ...palU };
+    return { gro: groTex, nzS: nzS.tex, zc: gv.center, zoom: ramp(t, gv.push), shim: PBS.clamp((v - 0.15) / 0.3, 0, 1), boneMul: 1 + 0.04 * PBS.clamp((v - 0.33) / 0.2, -1, 1), t, ...palU };
   }
   // Vistas: función de t → dibuja en un target (o en pantalla con null)
   const views = {
@@ -173,8 +178,8 @@ window.createReel = async function (canvas, cfg) {
   };
   const Fz = cfg.fronts;
   // Recorte (scissor) de cada capa a su semiplano + margen: fuera de él la capa no se lee (el borde es nítido).
-  function halfBox(dir, pos, sign, margin) {
-    const W = cfg.width, H = cfg.height, corners = [[0, 0], [W, 0], [W, H], [0, H]];
+  function halfBox(dir, pos, sign, margin, sy0 = 0, sy1 = cfg.height) {
+    const W = cfg.width, H = cfg.height, corners = [[0, sy0], [W, sy0], [W, sy1], [0, sy1]];
     const val = (p) => sign * (p[0] * dir[0] + p[1] * dir[1] - pos) + margin; // ≥ 0 dentro
     const pts = [];
     for (let i = 0; i < 4; i++) {
@@ -190,9 +195,13 @@ window.createReel = async function (canvas, cfg) {
   }
   function frontPass(t, A, B, o) {
     const m = o.oct[0] + o.oct[2] + o.oct2[0] + o.oct2[2] + (o.burr || 0) + 12;
+    // cada capa solo donde puede verse: recorte por franjas horizontales (un frente diagonal ya no cubre dos cuadros enteros)
     gl.enable(gl.SCISSOR_TEST);
-    let b = halfBox(o.dir, o.pos, 1, m); gl.scissor(b[0], b[1], b[2], b[3]); if (b[2] > 0 && b[3] > 0) views[A](t, tA);
-    b = halfBox(o.dir, o.pos, -1, m); gl.scissor(b[0], b[1], b[2], b[3]); if (b[2] > 0 && b[3] > 0) views[B](t, tB);
+    const NS = Math.abs(o.dir[0]) > 0.3 ? 8 : 1;
+    for (const [sign, V, tg] of [[1, A, tA], [-1, B, tB]]) for (let k = 0; k < NS; k++) {
+      const b = halfBox(o.dir, o.pos, sign, m, (cfg.height * k) / NS, (cfg.height * (k + 1)) / NS);
+      if (b[2] > 0 && b[3] > 0) { gl.scissor(b[0], b[1], b[2], b[3]); views[V](t, tg); }
+    }
     gl.disable(gl.SCISSOR_TEST);
     draw(progFront, { ta: tA.tex, tb: tB.tex, burr: 0, ...o }, null);
   }
@@ -211,9 +220,9 @@ window.createReel = async function (canvas, cfg) {
     if (t < m2[0]) return views.grotto(t, null);
     if (t < m2[1]) {
       // alba: de derecha a izquierda (este → oeste) y apenas en diagonal hacia abajo, como luz rasante;
-      // avanza durante todo el respiro (0,15·u + 0,85·u²) y pasa por la gente de la gruta al final (≈ 14,8 s)
-      const u = PBS.clamp((t - Fz.M2.dur[0]) / (Fz.M2.dur[1] - Fz.M2.dur[0]), 0, 1), p = 0.15 * u + 0.85 * u * u;
-      const dir = nrm([-1, 0.22]), [lo, hi] = span(dir), mg = 330;
+      // avanza durante todo el respiro (tramos a velocidad constante) y pasa por la gente de la gruta al final (≈ 14,85 s)
+      const K = Fz.M2.keys; let p = 1; for (let i = 0; i < K.length - 1; i++) if (t < K[i + 1][0]) { const a = K[i], b = K[i + 1], v = (t - a[0]) / (b[0] - a[0]); p = a[1] + (b[1] - a[1]) * v; break; }
+      const dir = nrm([-1, 0.22]), [lo, hi] = span(dir), mg = 260;
       return frontPass(t, 'grotto', 'planDay', { dir, pos: lo - mg + (hi - lo + 2 * mg) * p, oct: [120, 520, 32, 70], oct2: [7, 12, 80, 610], lineW: 3.8, seed: 7, lineCol: palU.cOchre, burr: 38 });
     }
     if (t < m3[0]) return views.planDay(t, null);
@@ -231,6 +240,15 @@ window.createReel = async function (canvas, cfg) {
     const r = PBS.drawClosing(sc.getContext('2d'), cfg.closingAt + 2, { t0: cfg.closingAt, dark: false, logo, logoWidth: cfg.logo.width, y: cfg.closing.y, ink: cfg.closing.ink, ink2: cfg.closing.ink2 });
     for (const w of r.warnings || []) if (!warnings.includes(w)) warnings.push(w);
     warnings.push('Logo 441 px ampliado a 620: pedir versión vectorial o PNG grande');
+  }
+  {
+    const tw = performance.now();
+    gl.enable(gl.SCISSOR_TEST); gl.scissor(0, 0, 1, 1);
+    for (const [v, tt] of [['planNight', 1], ['planDay', 16], ['grotto', 10], ['oblique', 25]]) views[v](tt, tA);
+    draw(progFront, { ta: tA.tex, tb: tB.tex, dir: [1, 0], pos: 0, oct: [0, 1, 0, 1], oct2: [0, 1, 0, 1], lineW: 2, seed: 1, lineCol: [0, 0, 0], burr: 0 }, tB);
+    gl.disable(gl.SCISSOR_TEST);
+    const px1 = new Uint8Array(4); gl.bindFramebuffer(gl.FRAMEBUFFER, tB.fb); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px1); gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    timings.warm = performance.now() - tw;
   }
   timings.init = performance.now() - T0;
   console.log('cota-cero init', JSON.stringify(timings));

@@ -84,7 +84,7 @@
     const blur = cfg.maskBlur;
     const water = rasterMask(w, h, M.water || [], blur);
     const rock = rasterMask(w, h, M.rock || [], blur);
-    const sky = rasterMask(w, h, M.sky || [], blur);
+    const sky = rasterMask(w, h, M.sky || [], M.skyBlur || blur);
     // agua automática: en una zona, el mar es la región clara conectada a una semilla (sigue el borde real de la roca)
     if (img && M.autoWater) {
       const Z = M.autoWater, zone = rasterMask(w, h, [Z.zone], 0);

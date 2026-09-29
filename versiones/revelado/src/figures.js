@@ -322,10 +322,10 @@
         // oclusión de contacto: banda aplanada bajo el apoyo (+0,6 D) y un halo oscuro amplio (+0,2 D)
         const c = CONTACT[f.pose] || [-8, 8];
         const cx0 = c[0] * fa, cx1 = c[1] * fa, cxm = (cx0 + cx1) / 2, hw = Math.abs(cx1 - cx0) * 0.55;
-        const con = tmp((g) => { g.beginPath(); g.ellipse(fx + cxm * s, fy + 0.3 * s, hw * s * 1.05, Math.max(1.1 * S, 1.1 * s), 0, 0, Math.PI * 2); g.fill(); });
-        blurDraw(gSh, con, 0.9 * S, 0.6);
-        const amb = tmp((g) => { g.beginPath(); g.ellipse(fx + cxm * s, fy + 0.8 * s, hw * s * 1.6, Math.max(2.5 * S, 3.2 * s), 0, 0, Math.PI * 2); g.fill(); });
-        blurDraw(gSh, amb, 2.5 * S, 0.22);
+        const con = tmp((g) => { g.beginPath(); g.ellipse(fx + cxm * s, fy + 0.2 * s, hw * s * 0.9, Math.max(0.9 * S, 0.8 * s), 0, 0, Math.PI * 2); g.fill(); });
+        blurDraw(gSh, con, 0.8 * S, 0.55);
+        const amb = tmp((g) => { g.beginPath(); g.ellipse(fx + cxm * s, fy + 0.6 * s, hw * s * 1.4, Math.max(1.8 * S, 2.2 * s), 0, 0, Math.PI * 2); g.fill(); });
+        blurDraw(gSh, amb, 2.5 * S, 0.16);
       }
       const cov = gCov.getImageData(0, 0, W, H).data, sh = gSh.getImageData(0, 0, W, H).data, lum = gLum.getImageData(0, 0, W, H).data;
       const lit = gLit.getImageData(0, 0, W, H).data, core = gCore.getImageData(0, 0, W, H).data;

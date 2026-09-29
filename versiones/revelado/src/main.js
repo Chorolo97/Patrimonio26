@@ -61,7 +61,6 @@ window.createReel = async function (canvas, cfg) {
   const tex = {};
   for (const kind of ['rinconada', 'gruta']) {
     const ph = gl.texture(mat[kind].photo);
-    G.bindTexture(G.TEXTURE_2D, ph); G.generateMipmap(G.TEXTURE_2D); G.texParameteri(G.TEXTURE_2D, G.TEXTURE_MIN_FILTER, G.LINEAR_MIPMAP_LINEAR);
     tex[kind] = { photo: ph, mask: gl.texture(mat[kind].mask) }; mat[kind].photo = null; mat[kind].mask = null;
   }
   // W(t) por cuadro en una textura float 1201×1
@@ -155,7 +154,7 @@ window.createReel = async function (canvas, cfg) {
     const tLast = m.t0 + (pmax + m.bow * 1.1 + m.noiseAmp * 1.3 + 12 - m.s0) / m.v; // llegada más tardía en pantalla
     return { ...m, a, pmax, tLast };
   });
-  const devEnd = (mg) => { let t = mg.tLast; while (t < 40 && W2(t) - W2(mg.tLast) < 0.06 + 7.5 * mg.tau0) t += 1 / 60; return t; };
+  const devEnd = (mg) => { let t = mg.tLast; while (t < 40 && W2(t) - W2(mg.tLast) < mg.induction + 5.3 * mg.tau0) t += 1 / 60; return t; };
   menGeo.forEach((m) => { m.tBleached = m.tLast + 90 / m.v; m.tDone = devEnd(m); });
 
   // ---------- plata que se suelta: partículas (P3) ----------

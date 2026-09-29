@@ -33,8 +33,8 @@ window.REEL_CONFIG = {
   // wet: el papel mojado se ve más hondo enseguida (sólo la postal de archivo)
   meniscus: [
     { t0: -0.9, dirDeg: -5, s0: -40, v: 660, bow: 80, noiseAmp: 60, seed: 1.7, figFront: 0, tau0: 0.32, induction: 0.03, wet: 0.4 },
-    { t0: 14.25, dirDeg: -12, s0: -90, v: 760, bow: 100, noiseAmp: 60, seed: 5.3, figFront: 1, tau0: 0.55, induction: 0.06, wet: 0 },
-    { t0: 22.23, dirDeg: 7, s0: -90, v: 820, bow: 90, noiseAmp: 60, seed: 9.1, figFront: 1, tau0: 0.55, induction: 0.06, wet: 0 },
+    { t0: 14.25, dirDeg: -12, s0: -90, v: 760, bow: 100, noiseAmp: 60, seed: 5.3, figFront: 1, tau0: 0.45, induction: 0.03, wet: 0 },
+    { t0: 22.23, dirDeg: 7, s0: -90, v: 820, bow: 90, noiseAmp: 60, seed: 9.1, figFront: 1, tau0: 0.45, induction: 0.03, wet: 0 },
   ],
 
   development: { tau0: 0.55, induction: 0.06, gateFloor: 0.12, gateFloorDev: 0.5, gate: [12.8, 15.05], ramp: 0.3 },
@@ -48,7 +48,7 @@ window.REEL_CONFIG = {
   burn: { t0: 33.6, t1: 35.0, yFull: 870, yZero: 1010, density: 1.2, edgeAmp: 25, drift: 0.012 },
   grotto: { swashRate: 1.9 },
   // plata de las figuras: luminancia según la profundidad en pantalla (perspectiva aérea) y desenfoque de la foto a esa distancia
-  figureLook: { yNear: 1800, yFar: 900, Lnear: 0.095, Lfar: 0.225, softNear: 0.8, softFar: 2.0, sailL: 0.30, sailSoft: 2.0 },
+  figureLook: { yNear: 1800, yFar: 900, Lnear: 0.095, Lfar: 0.175, softNear: 0.8, softFar: 2.0, sailL: 0.30, sailSoft: 2.0 },
   warmTimes: [0.4, 14.7, 16.4, 22.6, 27, 31],
   rinse: { t0: 12.8, t1: 15.05, drop: 13.1, center: [620, 760], amp: 3, grow: 1.8, wobble: 1.5, deepen: 0.04 },
   foam: { t0: 29.4, grow: 2.2, shadeT0: 28.6, shadeDur: 2.0, band: 10, cell: 2.0, xMin: 1760, size: [5, 8],
@@ -88,6 +88,7 @@ window.REEL_CONFIG = {
       water: [],
       rock: [[[0, 0], [3015, 0], [3015, 1730], [0, 1730]]],
       rockMinus: true,
+      skyBlur: 45, // la boca se oscurece con un borde muy suave (no un polígono)
     },
   },
 
