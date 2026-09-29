@@ -102,7 +102,7 @@
     // tono → ancho: paredes oscuras un juego fino, medias uno ancho, roca iluminada y arena un segundo juego a 70°
     const wMain = (p) => { const tt = tone(p[0], p[1]); const w = minW + (maxW - minW) * Math.pow(Math.max(0, (tt - 0.3) / 0.55), 1.1); return (w + wob(p)) * edge(p[0], p[1]); };
     const wSec = (p) => { const tt = tone(p[0], p[1]); return (minW + Math.max(0, tt - 0.74) * 5 + wob(p)) * edge(p[0], p[1]); };
-    const mainR = runs(main, 0.095, 0, 30), secR = runs(second, 0.74, 0, 30);
+    const mainR = runs(main, 0.1, 0, 56), secR = runs(second, 0.74, 0, 30);
     function strokes(mul) {
       const c = U.canvas(W, H), x = c.getContext('2d', { willReadFrequently: true });
       x.fillStyle = '#fff';

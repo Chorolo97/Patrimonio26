@@ -88,17 +88,54 @@
     const s8 = shots.find((s) => s.id === 'S8');
     const eChild = clock.elev(cfg.childRock.onset);
     for (const c of cast.S8 || []) {
-      if (c.childRock) {
-        const Lsh = cfg.childRock.h / Math.tan(eChild * D2R);
-        c.rock = [c.foot[0] + toSun[0] * (Lsh * 0.93 + 0.2), c.foot[1] + toSun[1] * (Lsh * 0.93 + 0.2), cfg.childRock.r, cfg.childRock.h];
-        rocks.push(c.rock);
-      } else if (c.rock) {
+      if (c.rock) {
         const fa = c.face * D2R, fw = [Math.sin(fa), Math.cos(fa)];
         rocks.push([c.foot[0] - fw[0] * 0.32, c.foot[1] - fw[1] * 0.32, 0.62, 0.48]);
       }
     }
 
     return { shots, shotAt, xform, toWorld, toScreen, trailFine, trailCoarse, trailAtS, cast, rocks, toSun, sDir, perp, s8 };
+  };
+
+  // ---- bolas de granito con sombra de largo dirigido ----
+  // S4: la loma (grupo de bolas al borde derecho) cuya sombra se retira: L = hb·K(t).
+  // S8: la roca del niño (sombra que se retira en el golpe) y la roca-asiento del anciano.
+  LR.makeBoulders = function (cfg, SC, clock) {
+    const out = {};
+    const rnd = PBS.rng(cfg.seed + 404);
+    for (const id of Object.keys(cfg.boulders || {})) {
+      const B = cfg.boulders[id], s = SC.shots.find((q) => q.id === id); if (!s) continue;
+      const X = SC.xform(s, s.t0);
+      const list = [];
+      for (const b of B.list) {
+        const p = b.world ? b.world.slice() : SC.toWorld(X, b.at[0], b.at[1]);
+        const o = { p, r: b.r, hb: b.hb, asp: b.asp || (0.85 + 0.35 * rnd()), ang: b.ang != null ? b.ang : rnd() * Math.PI, seed: 1 + rnd() * 50, role: b.role || '', hidden: !!b.hidden, Rb: b.Rb || 0, jag: b.jag || 0 };
+        if (B.K) { const [t0, t1, k0, k1] = B.K; o.L = (t) => o.hb * (k0 + (k1 - k0) * (1 - Math.pow(1 - PBS.clamp((t - t0) / (t1 - t0), 0, 1), 1.7))); }
+        else o.L = () => o.hb / Math.tan(cfg.sun.nearElev * Math.PI / 180);
+        list.push(o);
+      }
+      out[id] = list;
+    }
+    // roca del niño en S8: se ubica al este del niño; su sombra lo cubre hasta el golpe y se retira en ~8 cuadros
+    const CR = cfg.childRock;
+    for (const c of SC.cast.S8 || []) {
+      if (!c.childRock) continue;
+      const gap = CR.gap, R = CR.r;
+      const p = [c.foot[0] + SC.toSun[0] * (R + gap) + SC.perp[0] * CR.side, c.foot[1] + SC.toSun[1] * (R + gap) + SC.perp[1] * CR.side];
+      const o = { p, r: R, hb: CR.h, asp: 1.1, ang: 0.6, seed: 17.3, role: 'child' };
+      o.L = (t) => { const u = PBS.clamp((t - (CR.onset - CR.lead)) / CR.dur, 0, 1); const e2 = u * u * (3 - 2 * u); return gap + CR.cover + (CR.after - gap - CR.cover) * e2; };
+      (out.S8 = out.S8 || []).push(o);
+      c.rockRef = o;
+    }
+    return out;
+  };
+  LR.boulderOcc = function (b, p, L, SC) {
+    const rx = p[0] - b.p[0], ry = p[1] - b.p[1];
+    const a = rx * SC.sDir[0] + ry * SC.sDir[1], bb = rx * SC.perp[0] + ry * SC.perp[1];
+    const R = (b.Rb || b.r) * 0.96;
+    if (a < -b.r || Math.abs(bb) > R) return 0;
+    const front = Math.sqrt(Math.max(0, 1 - (bb / R) ** 2)) * (b.r + L), pen = 0.04 + 0.025 * Math.max(a, 0);
+    return (1 - PBS.smooth((a - front + pen) / (2 * pen))) * (1 - PBS.smooth((Math.abs(bb) / R - 0.9) / 0.14));
   };
 
   // ---- estado de figuras en t ----
@@ -123,6 +160,8 @@
         const side = [-tp.dir[1], tp.dir[0]];
         foot = [tp.p[0] + side[0] * (c.lat || 0), tp.p[1] + side[1] * (c.lat || 0)];
         face = Math.atan2(tp.dir[0], tp.dir[1]) / (Math.PI / 180);
+        // en la pausa, una persona gira el cuerpo (rotación, no gesto)
+        if (c.turn) face += c.turn * PBS.smooth((t - (stopT + dEase + 0.2)) / 1.4);
         moving = walkSpeed(t, shot.t0 - 3, c.v, stopT, dEase) / c.v;
         // al detenerse cambia a una silueta de pie (fundido 1 s)
         const standMap = { iP_walk_elder: 'iP_elder_a', iP_walk_staff: 'iP_staff_a', iP_walk_child: 'iP_child_a', iP_walk_bundle: 'iP_bundle_a', iP_walk_adult: 'iP_adult_a' };

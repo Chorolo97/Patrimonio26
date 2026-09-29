@@ -21,7 +21,7 @@ Primera versión completa y editable (v1) de un reel vertical poético, hecho co
 
 Hay presencia humana en pantalla de 0 a 30 s y de 35 a 40 s. El tramo central, de 6 a 28 s (22 s), está dedicado a las personas. Las transiciones son fundidos de 0,6 s centrados en cada corte, incluidos en los 40 s.
 
-> Por pedido del usuario, el cierre ya no incluye la nota «Evocación artística realizada con IA» (quitada de `reel/src/config.js` y de `shared/lib/closing.js`). El MP4 de la v1 en `entregas/` se exportó antes de ese cambio y todavía la muestra.
+> La v1 se conserva tal como se exportó (con la nota «Evocación artística realizada con IA»). Las versiones nuevas (`versiones/`) cierran sin esa nota, por pedido del usuario (`shared/lib/closing.js`).
 
 ## Ver y editar
 

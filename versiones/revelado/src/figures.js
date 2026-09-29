@@ -244,7 +244,7 @@
 
   // metadatos por pose: extensión del contacto con el suelo (unidades) para la sombra de contacto
   const CONTACT = {
-    standP: [-9, 12], standB: [-8.5, 9.5], standQ: [-9, 10], seatRock: [14, 31], seatGround: [-17, 33], crouch: [-20, 17],
+    standP: [-9, 12], standB: [-8.5, 9.5], standQ: [-9, 10], seatRock: [14, 31], seatGround: [-14, 33], crouch: [-7, 16],
     childP: [-9, 11], childCrouch: [-13, 21], colonistP: [-9.5, 12], sail: [0, 0],
   };
 
@@ -321,9 +321,9 @@
         blurDraw(gSh, cast, 1.2 * S + 0.012 * hgt, 0.42);
         // oclusión de contacto: banda aplanada bajo el apoyo (+0,6 D) y un halo oscuro amplio (+0,2 D)
         const c = CONTACT[f.pose] || [-8, 8];
-        const cx0 = c[0] * fa, cx1 = c[1] * fa, cxm = (cx0 + cx1) / 2, hw = Math.abs(cx1 - cx0) * 0.55;
-        const con = tmp((g) => { g.beginPath(); g.ellipse(fx + cxm * s, fy + 0.2 * s, hw * s * 0.9, Math.max(0.9 * S, 0.8 * s), 0, 0, Math.PI * 2); g.fill(); });
-        blurDraw(gSh, con, 0.8 * S, 0.55);
+        const cx0 = c[0] * fa, cx1 = c[1] * fa, cxm = (cx0 + cx1) / 2, hw = Math.abs(cx1 - cx0) * 0.5;
+        const con = tmp((g) => { g.beginPath(); g.ellipse(fx + cxm * s, fy + 0.3 * s, hw * s * 0.85, Math.max(1.2 * S, 1.5 * s), 0, 0, Math.PI * 2); g.fill(); });
+        blurDraw(gSh, con, 1.4 * S, 0.5);
         const amb = tmp((g) => { g.beginPath(); g.ellipse(fx + cxm * s, fy + 0.6 * s, hw * s * 1.4, Math.max(1.8 * S, 2.2 * s), 0, 0, Math.PI * 2); g.fill(); });
         blurDraw(gSh, amb, 2.5 * S, 0.16);
       }
@@ -336,7 +336,7 @@
         d[k + 1] = sh[k + 3];
         const Lb = lum[k + 3] > 0 ? lum[k] : 64;
         d[k + 2] = Math.min(255, Lb + Math.round((lit[k + 3] / 255) * (0.055 / 0.4) * 255));
-        d[k + 3] = Math.min(255, Math.round(core[k + 3] * 1.35));
+        d[k + 3] = Math.min(255, Math.round(core[k + 3] * 1.1));
       }
       out[part] = img;
       out['box' + part] = [x0, y0, x1 - x0, y1 - y0];

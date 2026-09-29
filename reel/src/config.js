@@ -80,6 +80,7 @@ window.REEL_CONFIG = {
         { text: 'Raíces indígenas:\npasado, presente y futuro', font: 'sans', weight: 600, size: 46, maxWidth: 760, maxLines: 2, gap: 26, style: 'closingData' },
         { text: '3 y 4 de octubre', font: 'sans', weight: 600, size: 50, gap: 30, style: 'closingData' },
         { logo: true, gap: 62 },
+        { text: 'Evocación artística realizada con IA', font: 'sans', weight: 400, size: 34, gap: 60, style: 'closingData' },
       ],
     },
   ],

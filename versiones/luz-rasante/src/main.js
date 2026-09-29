@@ -26,11 +26,9 @@ window.createReel = async function (canvas, cfg) {
   const height = (p) => (inTip(p) ? LR.sampleData(bk.tip, bk.tip.data, bk.tip.N, p[0], p[1], 0) : LR.sampleData(bk.big, bk.big.data, bk.big.N, p[0], p[1], 0));
   const horizon = (p) => (inTip(p) ? LR.sampleData(bk.tip, bk.tip.hzData, bk.tip.N, p[0], p[1], 0) : LR.sampleData(bk.big, bk.big.hzData, bk.big.NH, p[0], p[1], 0));
   const bigCh = (p, ch) => LR.sampleData(bk.big, bk.big.data, bk.big.N, p[0], p[1], ch);
-  const KS = cfg.knollSweep, KN = cfg.world.knoll;
-  function knollFront(t, shot) {
-    const c = shot.center, aC = (c[0] - KN.x) * SC.toSun[0] + (c[1] - KN.y) * SC.toSun[1];
-    return aC + KS.from + (KS.to - KS.from) * PBS.ease((t - KS.t0) / (KS.t1 - KS.t0));
-  }
+  // bolas de granito con sombra de largo dirigido (loma de S4, roca del niño y asiento de S8)
+  const boulders = LR.makeBoulders(cfg, SC, clock);
+  const bShadow = (p, t, shot) => { let o = 0; for (const b of boulders[shot.id] || []) o = Math.max(o, LR.boulderOcc(b, p, b.L(t), SC)); return o; };
   const CB = cfg.crestBand;
   const bandK = (t) => clock.D(t) / Math.max(1e-6, clock.D(4.97));
   const bandAt = (t) => [CB.dW0 + (CB.dW1 - CB.dW0) * bandK(t), CB.dE0 + (CB.dE1 - CB.dE0) * bandK(t), CB.bulgeW + (CB.bulgeW1 - CB.bulgeW) * bandK(t)];
@@ -38,33 +36,16 @@ window.createReel = async function (canvas, cfg) {
   const bandD = (p) => { const bx = CB.b[0] - CB.a[0], by = CB.b[1] - CB.a[1], L = Math.hypot(bx, by); return ((bx * (p[1] - CB.a[1]) - by * (p[0] - CB.a[0])) / L); };
   const litAt = {
     height,
-    lit(p, t, h, c, lift = 1.3) {
+    lit(p, t, h, c, lift = 1.3, noB = false) {
       const e = clock.elev(t);
       const hz = Math.max(horizon(p) - 0.6 * lift / 1.3, LR.pwl(cfg.sun.hzFar, h + lift)); // luz sobre el torso, no en los pies
       let l = PBS.smooth((e - hz + cfg.sun.penumbra) / (2 * cfg.sun.penumbra));
       const shot = SC.shotAt(t);
-      if (shot.id === 'S4') {
-        const rx = p[0] - KN.x, ry = p[1] - KN.y, a = rx * SC.toSun[0] + ry * SC.toSun[1], b = rx * SC.perp[0] + ry * SC.perp[1];
-        const fr = knollFront(t, shot);
-        if (a < 0 && Math.abs(b) < KS.halfLen) l *= 1 - PBS.smooth((a - fr + 0.8) / 1.6);
-      }
-      if (shot.id === 'S1') { const B = bandAt(t), bu = bandBulge(p, t); const d = bandD(p); l *= (1 - PBS.smooth((d - B[1] + 0.8) / 1.6)) * PBS.smooth((d - (B[0] - bu) + 0.8) / 1.6); }
-      if (c && c.childRock) l = PBS.smooth((t - cfg.childRock.onset + 0.05) / 0.1);
+      if (boulders[shot.id] && !noB) l *= 1 - bShadow(p, t, shot);
+      if (shot.id === 'S1') { const B = bandAt(t), bu = bandBulge(p, t); const d = bandD(p); l *= (1 - PBS.smooth((d - B[1] + 0.3) / 0.6)) * PBS.smooth((d - (B[0] - bu) + 0.3) / 0.6); }
       return l;
     },
   };
-  // el niño de S8: ubicarlo justo donde el borde de la sombra de su roca pasa en 37.80
-  for (const c of SC.cast.S8 || []) {
-    if (!c.childRock) continue;
-    const e0 = clock.elev(cfg.childRock.onset);
-    let best = null;
-    for (let s = 0.2; s < 30; s += 0.02) {
-      const p = [c.rock[0] + SC.sDir[0] * s, c.rock[1] + SC.sDir[1] * s];
-      if (s > c.rock[2] && horizon(p) < e0) { best = p; break; }
-    }
-    if (best) c.foot = [best[0] + SC.sDir[0] * 0.06, best[1] + SC.sDir[1] * 0.06];
-  }
-
   // ---- matas de monte: lista fija generada al iniciar ----
   const clumps = [];
   {
@@ -80,7 +61,7 @@ window.createReel = async function (canvas, cfg) {
         clumps.push([p[0], p[1], rad, hh, sd]);
       }
     }
-    for (const x of cfg.world.monteExtra || []) clumps.push([x[0], x[1], x[2], x[3], 3.3]);
+    for (const x of cfg.world.monteExtra || []) clumps.push([x[0], x[1], x[2], x[3], x[4] || 3.3]);
   }
 
   // ---- programas ----
@@ -105,7 +86,10 @@ window.createReel = async function (canvas, cfg) {
     t = PBS.clamp(t, 0, cfg.duration);
     const shot = SC.shotAt(t);
     const X = SC.xform(shot, t);
-    const e = clock.elev(t), eh = Math.max(e, cfg.sun.humanMinElev);
+    const e = clock.elev(t);
+    // elevación cercana (personas, matas, microsombras) dirigida; en tomas lejanas, el sol real
+    const eh = shot.eh === 'true' ? Math.max(e, cfg.sun.humanMinElev) : cfg.sun.humanElev;
+    const en = shot.W > 150 ? e : cfg.sun.nearElev;
     const voice = clock.voice(t), cen = clock.centroid(t), rms = clock.rms(t), low = clock.low(t), high = clock.high(t);
     // fase del mar; desde 38.5 el movimiento se calma
     let sea = clock.sea(t);
@@ -138,10 +122,12 @@ window.createReel = async function (canvas, cfg) {
       if (F.lit > 0.001) ovl.add('ov', 0, add2(F.foot, sD, (Lm - 0.6) / 2), sD.map((v) => v * ((Lm + 0.6) / 2 + pad)), pp.map((v) => v * (cW / 2 + pad)), p4, p5, p6, p7);
       ovl.add('ob', 1, F.foot, [0.62 + pad, 0], [0, 0.62 + pad], p4, p5, p6, p7);
     }
-    if (fx.includes('CLUMPS')) {
-      const tanE = Math.tan(e * D2R);
+    if (fx.includes('CLUMPS') && shot.W < 600) {
+      const tanE = Math.tan(en * D2R);
       for (const c of clumps) {
         if (!inView(c, 30)) continue;
+        // nunca junto a una persona (las dos elevaciones no se comparan lado a lado)
+        if (shot.W < 150 && figs.some((F) => Math.hypot(F.foot[0] - c[0], F.foot[1] - c[1]) < 3 + c[2])) continue;
         const Lt = Math.min(c[3] / Math.max(tanE, 0.005), 9 * c[2]) + c[2];
         const lt = litAt.lit(c, t, bigCh(c, 0), null, c[3] * 0.7);
         const o = add2(c, sD, (Lt - 1.4 * c[2]) / 2);
@@ -149,6 +135,14 @@ window.createReel = async function (canvas, cfg) {
         ovl.add('ov', 2, o, A, B, [c[0], c[1], c[2], c[3]], [c[4], lt, 0, 0]);
         ovl.add('ob', 2, o, A, B, [c[0], c[1], c[2], c[3]], [c[4], lt, 0, 0]);
       }
+    }
+    for (const b of boulders[shot.id] || []) {
+      if (!inView(b.p, 40)) continue;
+      const Lb = b.L(t), R = Math.max(b.r, b.Rb || 0) * 1.15 + (b.jag || 0);
+      const lt = litAt.lit(b.p, t, bigCh(b.p, 0), null, b.hb, true);
+      const o = add2(b.p, sD, Lb / 2), A = sD.map((v) => v * (Lb / 2 + R * 1.3 + pad)), B = pp.map((v) => v * (R * 1.3 + pad));
+      const P2 = [b.p[0], b.p[1], b.r, b.hb], P3 = [Lb, b.seed, b.asp, b.ang], P4 = [lt, b.hidden ? 1 : 0, b.Rb || 0, b.jag || 0];
+      ovl.add('ov', 6, o, A, B, P2, P3, P4); ovl.add('ob', 6, o, A, B, P2, P3, P4);
     }
     const tanE = Math.tan(e * D2R);
     if (fx.includes('BOAT')) {
@@ -207,10 +201,7 @@ window.createReel = async function (canvas, cfg) {
       }
     }
     const hasOV = ovl.count() > 0;
-    ovl.draw({ uXf: [X.cx, X.cy, X.mpp, X.th], uE: e, uEh: eh, tip: tipOn, sunC, sky, far: shot.W > 300 ? 1 : 0 });
-
-    const knOn = fx.includes('KNOLL') ? 1 : 0;
-    const kFront = knOn ? knollFront(t, shot) : 0;
+    ovl.draw({ photo, uXf: [X.cx, X.cy, X.mpp, X.th], uE: e, uEh: eh, uEn: en, tip: tipOn, sunC, sky, far: shot.W > 150 ? 1 : 0 });
     // encaje
     const lc = cfg.lace;
     const laceR = shot.id === 'S8' ? lc.R : lc.R * PBS.ease((t - lc.t0) / (lc.grow - lc.t0));
@@ -222,16 +213,17 @@ window.createReel = async function (canvas, cfg) {
     gl.useProgram(pWorld); { const l = gl.getUniformLocation(pWorld, 'uTrail'); if (l) gl.uniform4fv(l, uTrail); }
     const U = {
       tBake: bk.big.tex, tNorm: bk.big.norm, tHz: bk.big.hz, tTip: bk.tip.tex, tTipN: bk.tip.norm, tTipHz: bk.tip.hz, tDet: bk.det, tWave: bk.wave, tPhoto: photo, tAtlas: atlas.tex, tOV: ovl.OV.tex, tOB: ovl.OB.tex, tVor: bk.vor,
-      uXf: [X.cx, X.cy, X.mpp, X.th], uT: t, uE: e, uEh: eh, uSunI: sunI, uSunC: sunCol, uSky: sky,
+      uXf: [X.cx, X.cy, X.mpp, X.th], uT: t, uE: e, uEh: eh, uEn: en, uSunI: sunI, uSunC: sunCol, uSky: sky,
       uSea: sea, uLow: low, uHigh: high, uSway: sway, uGust: gustPh,
       uFlags: [close, tipOn, 0, 0], uFlags2: [0, tipOn, shot.id === 'S8' ? 1 : 0, 0],
-      uLace: [laceR, laceW, flash, drift], uKnoll: [knOn, kFront, KS.jag, KS.halfLen], uKnollP: [KN.x, KN.y, 0, 0],
+      uLace: [laceR, laceW, flash, drift],
       uCalm: [1320, 0, 0, 0], uNTrail: nT, uOvBox: ovl.screenBox(), uBand: [CB.a[0], CB.a[1], CB.b[0], CB.b[1]], uBandL: [bandAt(t)[0], bandAt(t)[1], CB.jag, 0], uBand2: [CB.bulgeY, CB.bulgeSigma, bandAt(t)[2], 0], uLip: shot.id === 'S7' ? 1 : 0, uMacS: shot.W > 300 ? 420 : shot.W > 150 ? 110 : 60, uCalmK: cfg.closing.calmK,
     };
     // gradación (en el mismo pase)
     const cl = cfg.closing, ca = smooth((t - cfg.closingAt) / 0.8);
     U.uExp = cfg.grade.exposure * (1 + cfg.grade.lowSunBoost * (1 - smooth(e / 2.2))) * (1 + 0.04 * (rms - 0.5) * 2);
     U.uSeed = Math.round(t * cfg.fps) % 997; U.uGrain = cfg.grade.grain; U.uScrim = ca > 0 ? 1 - ca * (1 - cl.scrim) : 0; U.uBox = cl.scrimBox; U.uFeather = cl.scrimFeather;
+    U.uDbg = window.LR_DBG || [0, 0, 0, 0];
     G.draw(pWorld, U, null);
     ctx.clearRect(0, 0, cfg.width, cfg.height);
     ctx.drawImage(G.canvas, 0, 0);

@@ -155,7 +155,7 @@ window.createReel = async function (canvas, cfg) {
     return { ...m, a, pmax, tLast };
   });
   const devEnd = (mg) => { let t = mg.tLast; while (t < 40 && W2(t) - W2(mg.tLast) < mg.induction + 5.3 * mg.tau0) t += 1 / 60; return t; };
-  menGeo.forEach((m) => { m.tBleached = m.tLast + 90 / m.v; m.tDone = devEnd(m); });
+  menGeo.forEach((m) => { m.tBleached = m.tLast + 130 / m.v; m.tDone = devEnd(m); });
 
   // ---------- plata que se suelta: partículas (P3) ----------
   const foamVS = (() => { // gl.program usa un vertex shader fijo: compilamos el nuestro a mano
@@ -171,7 +171,7 @@ window.createReel = async function (canvas, cfg) {
     const w = M.w, hw = M.hw, hh = M.hh, dL = M.dLand;
     const dAt = (x, y) => { const X = PBS.clamp(Math.round(x / 2), 0, hw - 1), Y = PBS.clamp(Math.round(y / 2), 0, hh - 1); return dL[Y * hw + X] * 2; };
     const wAt2 = (x, y) => M.water[PBS.clamp(Math.round(y), 0, M.h - 1) * w + PBS.clamp(Math.round(x), 0, w - 1)];
-    const avoid = P3.figs.filter((f) => f.pose !== 'sail').map((f) => [f.foot[0] - 40 * f.unit, f.foot[1] - 108 * f.unit, f.foot[0] + 40 * f.unit, f.foot[1] + 6 * f.unit]);
+    const avoid = P3.figs.map((f) => (f.pose === 'sail' ? [f.foot[0] - 22, f.foot[1] - 40, f.foot[0] + 22, f.foot[1] + 14] : [f.foot[0] - 40 * f.unit, f.foot[1] - 108 * f.unit, f.foot[0] + 40 * f.unit, f.foot[1] + 6 * f.unit]));
     const inAvoid = (x, y) => avoid.some((b) => x > b[0] && x < b[2] && y > b[1] && y < b[3]);
     // candidatas: granito justo encima de la orilla verdadera (pie del acantilado y de la sierra) y el borde de la charca
     const WLp = F.waterline;
@@ -231,7 +231,7 @@ window.createReel = async function (canvas, cfg) {
     return PBS.lerp(k[0][1], last[1], PBS.ease((t - k[0][0]) / (last[0] - k[0][0])));
   };
   const pushAt = (P, t) => (P.push ? PBS.lerp(P.push.from, P.push.to, PBS.ease((t - P.push.t0) / (P.push.t1 - P.push.t0))) : 1);
-  const devGroup = (g, t) => { const G0 = cfg.groups[g]; return 1 - Math.exp(-Math.max(0, W(t) - W(G0.start) - dv.induction) / G0.tau0); };
+  const devGroup = (g, t) => { const G0 = cfg.groups[g]; return 1 - Math.exp(-Math.max(0, W(t) - W(G0.start) - (G0.induction != null ? G0.induction : dv.induction)) / G0.tau0); };
   const slotUniforms = (pre, P, t, isB) => {
     const ms = mat[P.kind];
     const grp = [0, 0, 0, 0];
@@ -242,6 +242,7 @@ window.createReel = async function (canvas, cfg) {
       [pre + 'Geo']: [origin(P, t), P.originY, P.scale, pushAt(P, t)], [pre + 'Geo2']: [pc[0], pc[1], ms.w, ms.h],
       [pre + 'BoxA']: P.boxA, [pre + 'BoxB']: P.boxB, [pre + 'Grp']: grp,
       [pre + 'GB1']: P.gbox[0], [pre + 'GB2']: P.gbox[1], [pre + 'GB3']: P.gbox[2],
+      [pre + 'GCW']: [0, 1, 2, 3].map((i) => (P.groups[i] && cfg.groups[P.groups[i]].coreW != null ? cfg.groups[P.groups[i]].coreW : 0.72)),
     };
   };
 
@@ -260,6 +261,8 @@ window.createReel = async function (canvas, cfg) {
     const ringR = ra > 0 ? (ra / cfg.rinse.grow) * 1500 : -1e4;
     const ringA = ra > 0 ? cfg.rinse.amp * (1 - PBS.smooth((ra - 1.2) / 1.0)) : 0;
     const Bn = cfg.burn, burnP = PBS.ease((t - Bn.t0) / (Bn.t1 - Bn.t0));
+    // la tarjeta baja con un borde muy ancho que se va cerrando; la densidad entra de a poco (no una barra)
+    const burnFeather = PBS.lerp(Bn.featherStart, Bn.yZero - Bn.yFull, burnP), burnDens = Bn.density * PBS.smooth(burnP / 0.35);
     const warm = PBS.smooth(t / cfg.tone.warmBy);
     const hi = [0, 1, 2].map((i) => hiFrom[i] + (hiTo[i] - hiFrom[i]) * warm);
     const cent = 2 * avg(A.cent, t, 2) - 1;
@@ -272,10 +275,10 @@ window.createReel = async function (canvas, cfg) {
       uWtex: wTex, uNoise: noiseTex, uGrain: grainTex, uGOff: [(frame * 389) % 1024, (frame * 683 + 211) % 1024],
       ...slotUniforms('b', B, t, true),
       ...(Aold ? slotUniforms('a', Aold, t, false) : {}),
-      uMen: [mg.t0, mg.s0, mg.v, mg.a], uMen2: [mg.bow, mg.noiseAmp, mg.seed, frontVisible], uMen3: [mg.figFront, mg.tau0, mg.induction, mg.wet],
+      uMen: [mg.t0, mg.s0, mg.v, mg.a], uMen2: [mg.bow, mg.noiseAmp, mg.seed, frontVisible], uMen3: [mg.figFront, mg.tau0, mg.induction, mg.wet], uFigTau: mg.figTau || 0.3,
       uDevAll: t > mg.tDone ? 1 : -1,
       uRinse: [cfg.rinse.wobble * rinseW, ringR, ringA, cfg.rinse.deepen * rinseW],
-      uBurn: [burnP, Bn.yFull, Bn.yZero, Bn.density], uBurn2: [t * Bn.drift, Bn.edgeAmp, 0, 0],
+      uBurn: [burnP, Bn.yFull, Bn.yZero, burnDens], uBurn2: [t * Bn.drift, Bn.edgeAmp, burnFeather, 0],
       uFoam: [foamGrow, seaShade, 0, 0],
       uSurge: surge(t), uSwashPhase: S * 1.35, uGrottoPhase: S * cfg.grotto.swashRate + 0.4,
     };
@@ -286,7 +289,7 @@ window.createReel = async function (canvas, cfg) {
       G.useProgram(foamVS);
       const L = foam.loc;
       G.uniform1f(L.uT, t); G.uniform1f(L.uS, S); G.uniform4f(L.uGeo, origin(B, t), B.originY, B.scale, 0);
-      G.uniform4f(L.uBurn, burnP, Bn.yFull, Bn.yZero, Bn.density); G.uniform1f(L.uHigh, at(A.high, t));
+      G.uniform4f(L.uBurn, burnP, Bn.yFull, burnFeather, burnDens); G.uniform1f(L.uHigh, at(A.high, t));
       G.activeTexture(G.TEXTURE0); G.bindTexture(G.TEXTURE_2D, toneTex); G.uniform1i(L.uTone, 0);
       G.enable(G.BLEND);
       G.bindVertexArray(foam.vao);

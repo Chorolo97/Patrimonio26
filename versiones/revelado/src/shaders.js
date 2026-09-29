@@ -29,14 +29,14 @@ uniform sampler2D uNoise;  // ruido periódico 512², mipmaps
 uniform sampler2D uGrain;  // grano 1024² (R blanco, G fino, B grumos de archivo, A grumos de figura)
 uniform vec2 uGOff;
 uniform sampler2D bPhoto, bMask, bFigA, bFigB, aPhoto, aMask, aFigA, aFigB;
-uniform vec4 bGeo, bGeo2, bBoxA, bBoxB, bGrp, bGB1, bGB2, bGB3;
-uniform vec4 aGeo, aGeo2, aBoxA, aBoxB, aGrp, aGB1, aGB2, aGB3;
+uniform vec4 bGeo, bGeo2, bBoxA, bBoxB, bGrp, bGB1, bGB2, bGB3, bGCW;
+uniform vec4 aGeo, aGeo2, aBoxA, aBoxB, aGrp, aGB1, aGB2, aGB3, aGCW;
 uniform vec4 uMen, uMen2, uMen3; // t0, s0, v, ángulo | curva, ruido, semilla, visible | figuras por el frente, τ0, inducción, empuje húmedo
 uniform float uDevAll;           // ≥0: copia B ya revelada por completo
 uniform vec4 uRinse;             // ondulación, radio del anillo, amplitud del anillo, oscurecimiento
 uniform vec4 uBurn, uBurn2;      // progreso, yFull, yZero, densidad | fase del borde, amplitud del borde
 uniform vec4 uFoam;              // crecimiento, mar en sombra, deshilachado de la roca, 0
-uniform float uSurge, uSwashPhase, uGrottoPhase;
+uniform float uSurge, uSwashPhase, uGrottoPhase, uFigTau;
 
 vec2 menDir(){ float a = uMen.w; return vec2(sin(a), -cos(a)); }
 float front(vec2 p, out float tarr, out float perp){
@@ -100,15 +100,15 @@ void main(){
   if (uDevAll < 0.) {
     tau = uWt - wAt(tarr);
     dev = 1. - exp(-max(0., tau - uMen3.z)/uMen3.y);
-    devFig = 1. - exp(-max(0., tau - 0.03)/0.3);
-    devFig = max(devFig, uMen3.x * smoothstep(0., 200., er));
+    devFig = 1. - exp(-max(0., tau - 0.03)/uFigTau);
+    devFig = max(devFig, uMen3.x * smoothstep(0., 100., er));
     dev = max(dev, uMen3.w * smoothstep(0., 90., er) * step(0., tau)); // el papel mojado se ve más hondo enseguida
   }
   float Dbg, Df = 0., figC = 0., foam = 0., arch = 0.;
 #if DUAL
   // relevo llevado por el frente: delante sólo la copia vieja; en la banda de lavado se disuelve; detrás sólo la nueva
-  float wA = 1. - smoothstep(0., 70., er);
-  float wF = 1. - smoothstep(0., 50., er);
+  float wA = 1. - smoothstep(0., 64., er);
+  float wF = 1. - smoothstep(0., 70., er);
   Dbg = 0.;
   float cB = 0.;
   if (er > 0.) { PR B = shadeB(pr, dev, devFig); Dbg = B.Dbg; Df = B.Df; cB = B.c; foam = B.foam; }
@@ -144,9 +144,11 @@ void main(){
     float nb1 = texture(uNoise, vec2(p.x/2200. + uBurn2.x, 0.83)).b - 0.5;
     float nb2 = texture(uNoise, vec2(p.x/900. - 0.6*uBurn2.x, 0.29)).r - 0.5;
     float wave = uBurn2.y * (1.4*nb1 + 0.6*nb2);
-    float bd = uBurn.w * (1. - smoothstep(yc, yc + (uBurn.z - uBurn.y), p.y + wave));
+    float bd = uBurn.w * (1. - smoothstep(yc, yc + uBurn2.z, p.y + wave));
     L *= exp2(-3.321928 * bd);
   }
+  // la emulsión mojada que todavía no reveló es gris lechosa, no papel blanco (sólo fuera de las figuras)
+  if (uDevAll < 0. && er > 0.) L *= 1. - 0.08*(1. - dev)*(1. - figC)*smoothstep(0., 160., er);
   // grano: vivo fino, archivo grueso, figuras en grumos densos de plata
   float g1 = gt.r - 0.5, g2 = gt.g - 0.5, gA = gt.b - 0.5, gF = gt.a - 0.5;
   float mid = max(clamp(4. * L * (1. - L), 0.15, 1.), 0.5*figC);
@@ -162,19 +164,19 @@ void main(){
   if (uMen2.w > 0.5 && er > -3. && er < 240.) {
     float nb = texture(uNoise, vec2(perp/3840. + uMen2.z, uTr*0.02 + 0.5)).a;
     float nb2 = texture(uNoise, vec2(perp/1300. + 1.3*uMen2.z, 0.37)).g;
-    float thick = 3. + 2.2*nb2;
-    if (er < 0.) L *= 1. - 0.24*smoothstep(-2.6, -0.8, er);
+    float thick = 3. + 3.*nb2;
+    float brk = smoothstep(0.44, 0.6, nb);
+    if (er < 0.) L *= 1. - (0.08 + 0.1*brk)*smoothstep(-2.6, -0.8, er);
     float crest = smoothstep(-0.2, 0.9, er) * (1. - smoothstep(thick - 1.2, thick + 0.6, er));
-    float brk = smoothstep(0.34, 0.56, nb);
-    spec = crest * mix(0.18, 1., brk) * min(1., 0.72 + 0.28*uSurge);
+    spec = crest * brk * min(1., 0.72 + 0.28*uSurge);
     float trough = smoothstep(thick, thick + 1.5, er) * (1. - smoothstep(thick + 5., thick + 8., er));
     float r1 = er - (34. + 7.*nb2), r2 = er - (68. + 12.*nb2);
     float rip = 0.065*exp(-r1*r1/3.) - 0.045*exp(-(r1 - 3.2)*(r1 - 3.2)/4.) + 0.04*exp(-r2*r2/4.) - 0.03*exp(-(r2 - 3.4)*(r2 - 3.4)/5.);
-    L *= 1. - 0.13*step(0., er)*exp(-er/110.);   // papel mojado: gris, nunca un halo claro
+    L *= 1. - 0.07*step(0., er)*exp(-er/90.);   // papel mojado: apenas gris, nunca un halo claro
     float midL = 4.*L*(1. - L);
     float gl = step(0., er) * exp(-er/16.) * 0.08 * midL;
     float wb = step(0., er) * (1. - smoothstep(0., 230., er));
-    L *= (1. - 0.13*trough) * (1. + rip*step(0., er));
+    L *= (1. - (0.05 + 0.1*brk)*trough) * (1. + rip*step(0., er));
     L = (L + (L - 0.5)*0.14*wb*midL) * (1. - 0.07*wb) + gl;
   }
   vec3 col = toneColor(clamp(L, 0., 1.), archAmt);
@@ -194,10 +196,10 @@ void main(){
   // Cuerpo de la función de copia, especializado por macros (una variante de programa por combinación de copias)
   const PRINT_BODY = `
 // figura: cobertura × nucleación (grumos que se juntan, del núcleo al borde), luminancia propia bajo la misma luz
-void FNAME_fig(vec4 F, float devF, vec2 q, float lightMul, uint sd, inout PR r){
+void FNAME_fig(vec4 F, float devF, vec2 q, float lightMul, uint sd, float coreW, inout PR r){
   if (F.r < 0.004 || devF <= 0.) return;
-  float thr = 0.78*(1. - F.a) + 0.22*nucN(q, sd);
-  float nuc = smoothstep(thr - 0.035, thr + 0.035, devF*1.1);
+  float thr = coreW*(1. - F.a) + (1. - coreW)*smoothstep(0.2, 0.8, nucN(q, sd));
+  float nuc = smoothstep(thr - 0.03, thr + 0.03, devF*1.06);
   float cc = F.r * nuc;
   if (cc > r.c) {
     float Lf = F.b * 0.4 * lightMul;
@@ -226,9 +228,11 @@ PR FNAME(vec2 p, float dev, float devFig){
   Ll = mix(Ll, mix(0.02 + 0.93*L0, Ll, 0.35), lowB);
 #endif
   // luz de la mañana que camina sobre la tierra
+  float lightMul = 1.;
+  if (live > 0.001) {   // lo que todavía es archivo (delante del primer frente) no se mueve: no se calcula
   vec2 lq = (q + vec2(-12.*uT, -3.*uT)) / 900.;
   float lf = texture(uNoise, lq/8.).r;
-  float lightMul = mix(1., 0.93 + 0.14*smoothstep(0.2, 0.8, lf), live);
+  lightMul = mix(1., 0.93 + 0.14*smoothstep(0.2, 0.8, lf), live);
   Ll *= mix(1., lightMul, 1. - 0.6*skyM*float(1 - IS_GRUTA));
 #if !IS_GRUTA
   {
@@ -315,25 +319,27 @@ PR FNAME(vec2 p, float dev, float devFig){
   {
     // gruta: la boca es una abertura negra; lámina de resaca que sube por la arena; cáusticas en las paredes bajas
     Ll *= 1. - 0.55*skyM*(1. - smoothstep(0.14, 0.5, Ll))*(0.94 + 0.06*sin(uT*1.1));
-    float gp = uGrottoPhase;
-    float reach = (40. + 150. * pow(0.5 + 0.5*sin(gp), 1.2)) * (0.75 + 0.5*uLow);
-    float nx = texture(uNoise, vec2(q.x/900., gp*0.02)).r - 0.5;
-    float yf = 1742. - reach * (1. + 0.45*nx);
-    float sd = q.y - yf; // >0 dentro de la lámina
-    float sheet = smoothstep(-1., 3., sd);
-    float lacy = smoothstep(0.3, 0.7, texture(uNoise, vec2(q.x/55., q.y/14.)).b);
-    float edge = exp(-pow((sd - 3.)/3.6, 2.)) * (0.6 + 0.4*lacy);
-    float gloss = sheet * exp(-max(sd - 6., 0.)/55.);
-    float trail = smoothstep(-80., 0., sd) * (1. - sheet) * smoothstep(-0.2, 0.6, -cos(gp));
-    float Lg = Ll;
-    Lg *= 1. - 0.30*gloss - 0.10*sheet;
-    Lg += 0.06*sheet*smoothstep(0.45, 0.8, texture(uNoise, vec2(q.x/120. + gp*0.05, q.y/25.)).g);
-    Lg *= 1. - 0.14*trail;
-    Lg = mix(Lg, 0.95, edge*0.92*step(8., reach));
-    Ll = mix(Ll, Lg, sand * live);
+    if (sand > 0.01) {
+      float gp = uGrottoPhase;
+      float reach = (40. + 150. * pow(0.5 + 0.5*sin(gp), 1.2)) * (0.75 + 0.5*uLow);
+      float nx = texture(uNoise, vec2(q.x/900., gp*0.02)).r - 0.5;
+      float yf = 1742. - reach * (1. + 0.45*nx);
+      float sd = q.y - yf; // >0 dentro de la lámina
+      float sheet = smoothstep(-1., 3., sd);
+      float lacy = smoothstep(0.3, 0.7, texture(uNoise, vec2(q.x/55., q.y/14.)).b);
+      float edge = exp(-pow((sd - 3.)/3.6, 2.)) * (0.6 + 0.4*lacy);
+      float gloss = sheet * exp(-max(sd - 6., 0.)/55.);
+      float trail = smoothstep(-80., 0., sd) * (1. - sheet) * smoothstep(-0.2, 0.6, -cos(gp));
+      float Lg = Ll;
+      Lg *= 1. - 0.30*gloss - 0.10*sheet;
+      Lg += 0.06*sheet*smoothstep(0.45, 0.8, texture(uNoise, vec2(q.x/120. + gp*0.05, q.y/25.)).g);
+      Lg *= 1. - 0.14*trail;
+      Lg = mix(Lg, 0.95, edge*0.92*step(8., reach));
+      Ll = mix(Ll, Lg, sand * live);
+    }
     // banda húmeda bajo la boca: el borde arena/boca deja de ser una línea recta de retoque
     float dS = P.g * 255. * 2.;
-    float wetM = sand * (1. - smoothstep(1452., 1478. + 12.*nx, q.y));
+    float wetM = sand * (1. - smoothstep(1452., 1478., q.y));
     Ll *= 1. - 0.16*wetM;
     float cw = (1. - sand) * (1. - smoothstep(20., 260., dS)) * (1. - 0.6*skyM);
     if (cw > 0.01) {
@@ -347,6 +353,7 @@ PR FNAME(vec2 p, float dev, float devFig){
     }
   }
 #endif
+  }
   float Dt = -0.30103 * log2(max(Ll, 0.02)/LP);
   float D;
 #if ARCHIVE
@@ -383,20 +390,20 @@ PR FNAME(vec2 p, float dev, float devFig){
   if (aq.x > 0. && aq.y > 0. && aq.x < 1. && aq.y < 1.) {
     vec4 F = texture(FA, vec2(aq.x, 1. - aq.y));
     D += F.g * 1.05 * smoothstep(0., 0.6, devFig);
-    FNAME_fig(F, devFig, q, lightMul, 17u, r);
+    FNAME_fig(F, devFig, q, lightMul, 17u, 0.72, r);
   }
 #if HAS_FIGB
   {
     vec2 bq = (q - boxB.xy) / boxB.zw;
     if (bq.x > 0. && bq.y > 0. && bq.x < 1. && bq.y < 1.) {
       vec4 F = texture(FB, vec2(bq.x, 1. - bq.y));
-      float devF = 0.;
-      if (q.x > gb1.x && q.y > gb1.y && q.x < gb1.z && q.y < gb1.w) devF = grp.x;
-      else if (q.x > gb2.x && q.y > gb2.y && q.x < gb2.z && q.y < gb2.w) devF = grp.y;
-      else if (q.x > gb3.x && q.y > gb3.y && q.x < gb3.z && q.y < gb3.w) devF = grp.z;
+      float devF = 0., cw = 0.72;
+      if (q.x > gb1.x && q.y > gb1.y && q.x < gb1.z && q.y < gb1.w) { devF = grp.x; cw = gcw.x; }
+      else if (q.x > gb2.x && q.y > gb2.y && q.x < gb2.z && q.y < gb2.w) { devF = grp.y; cw = gcw.y; }
+      else if (q.x > gb3.x && q.y > gb3.y && q.x < gb3.z && q.y < gb3.w) { devF = grp.z; cw = gcw.z; }
       devF *= step(0.15, devFig);
       D += F.g * 1.05 * smoothstep(0., 0.6, devF);
-      FNAME_fig(F, devF, q, lightMul, 29u, r);
+      FNAME_fig(F, devF, q, lightMul, 29u, cw, r);
     }
   }
 #endif
@@ -410,9 +417,9 @@ PR FNAME(vec2 p, float dev, float devFig){
 }
 
 `;
-  const NAMES = ['PH', 'MK', 'FA', 'FB', 'geo', 'geo2', 'boxA', 'boxB', 'grp', 'gb1', 'gb2', 'gb3', 'IS_GRUTA', 'ARCHIVE', 'FOAM', 'HAS_FIGB'];
+  const NAMES = ['PH', 'MK', 'FA', 'FB', 'geo', 'geo2', 'boxA', 'boxB', 'grp', 'gb1', 'gb2', 'gb3', 'gcw', 'IS_GRUTA', 'ARCHIVE', 'FOAM', 'HAS_FIGB'];
   function printFn(pre, name, o) {
-    const vals = [pre + 'Photo', pre + 'Mask', pre + 'FigA', pre + 'FigB', pre + 'Geo', pre + 'Geo2', pre + 'BoxA', pre + 'BoxB', pre + 'Grp', pre + 'GB1', pre + 'GB2', pre + 'GB3', o.gruta ? 1 : 0, o.archive ? 1 : 0, o.foam ? 1 : 0, o.figB ? 1 : 0];
+    const vals = [pre + 'Photo', pre + 'Mask', pre + 'FigA', pre + 'FigB', pre + 'Geo', pre + 'Geo2', pre + 'BoxA', pre + 'BoxB', pre + 'Grp', pre + 'GB1', pre + 'GB2', pre + 'GB3', pre + 'GCW', o.gruta ? 1 : 0, o.archive ? 1 : 0, o.foam ? 1 : 0, o.figB ? 1 : 0];
     const body = PRINT_BODY.replace(/FNAME/g, name);
     return NAMES.map((n, i) => `#define ${n} ${vals[i]}`).join('\n') + '\n' + body + '\n' + NAMES.map((n) => `#undef ${n}`).join('\n') + '\n';
   }
@@ -451,7 +458,7 @@ void main(){
   float wht = smoothstep(1., 9., trav - aQ.w);
   float a = smoothstep(0., 0.2, age) * (1. - smoothstep(aQ.z*0.6, aQ.z, age));
   float yc = mix(-420., uBurn.y, uBurn.x);
-  float bd = uBurn.x > 0. ? uBurn.w * (1. - smoothstep(yc, yc + (uBurn.z - uBurn.y), s.y)) : 0.;
+  float bd = uBurn.x > 0. ? uBurn.w * (1. - smoothstep(yc, yc + uBurn.z, s.y)) : 0.;
   vA = a; vW = wht; vL = aR.z; vB = pow(10., -bd);
   gl_Position = vec4(s.x/540. - 1., 1. - s.y/960., 0., 1.);
   gl_PointSize = aR.w * (1. + 0.35*wht);

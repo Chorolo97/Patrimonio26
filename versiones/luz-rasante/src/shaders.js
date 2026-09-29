@@ -26,14 +26,12 @@ in vec2 uv; out vec4 o;
 ${PBS.GLSL_NOISE}
 uniform sampler2D tBake, tNorm, tHz, tTip, tTipN, tTipHz, tDet, tWave, tPhoto, tAtlas, tOV, tOB, tVor;
 uniform vec4 uXf;          // cx, cy, mpp, theta
-uniform float uT, uE, uEh, uSunI;
+uniform float uT, uE, uEh, uEn, uSunI;
 uniform vec3 uSunC, uSky;
 uniform float uSea, uLow, uHigh, uSway, uGust;
 uniform vec4 uFlags;       // close, tip, ship, boat
 uniform vec4 uFlags2;      // footprints, lace, calm(S8), clumps
 uniform vec4 uLace;        // R, width, flash, drift
-uniform vec4 uKnoll;       // on, frontA (m, eje solar desde la loma), jag, halfLen
-uniform vec4 uKnollP;      // x, y, 0, 0
 uniform vec4 uBand, uBandL, uBand2; uniform float uLip;
 uniform float uExp, uSeed, uScrim, uGrain, uMacS, uCalmK; uniform vec4 uOvBox; uniform vec4 uBox; uniform float uFeather;
 ${LR.gradeGLSL(cfg)}  // S1: (ax, ay, bx, by), (c, w, jag, 0)
@@ -115,7 +113,9 @@ void main(){
 
   // detalle (matas / ruido medio / grano / ondas de arena)
   vec2 sway = vec2(0.8,0.6)*uSway*fp*sin(uT*2.3 + dot(P, vec2(0.23,0.17)) + uGust*3.);
-  vec2 dq = (P + sway)/16.;
+  // dominio del mosaico de detalle deformado por un campo lento (±4 m): rompe la repetición de 16 m
+  vec2 warpD = (vec2(vnoise(P/29.+1.3), vnoise(P/29.+8.7))-0.5)*8.;
+  vec2 dq = (P + warpD + sway)/16.;
   vec4 DT = texture(tDet, dq);
   float lodFade = smoothstep(0.02, 0.2, fp);   // 1 = lejos (detalle ya promediado)
   vec4 MAC = texture(tDet, P/uMacS+vec2(0.37,0.71));
@@ -135,7 +135,6 @@ void main(){
   float jag = (tus-0.5)*0.16*(1.-lodFade) + (big2-0.5)*0.06;
   float lit = smoothstep(hz-${f(cfg.sun.penumbra)}, hz+${f(cfg.sun.penumbra)}, uE + jag);
 
-  // sombra dirigida de la loma (S4)
 #ifdef F_BAND
   {
     vec2 ba = uBand.zw - uBand.xy, pa = P - uBand.xy; float d = (ba.x*pa.y - ba.y*pa.x)/length(ba);
@@ -144,14 +143,7 @@ void main(){
     lit *= (1.-smoothstep(uBandL.y-0.8, uBandL.y+0.8, dj))*smoothstep(uBandL.x-bu-0.8, uBandL.x-bu+0.8, dj);
   }
 #endif
-#ifdef F_KNOLL
-  {
-    vec2 rel = P - uKnollP.xy; float a = dot(rel, TOSUN), b = dot(rel, SPERP);
-    float front = uKnoll.y + (vnoise(vec2(b/3.2, 1.7))-0.5)*uKnoll.z + (tus-0.5)*0.9*(1.-lodFade);
-    float inS = smoothstep(front-0.6, front+0.6, a) * smoothstep(uKnoll.w, uKnoll.w-12., abs(b)) * step(a, 0.);
-    lit *= 1.-inS;
-  }
-#endif
+
 
   // ---------------- agua / costa ----------------
 #ifdef F_NOWATER
@@ -195,11 +187,12 @@ void main(){
   if(water < 0.999){
 #ifndef F_NOGRASS
     // pradera
-    vec3 ph = (texture(tPhoto, mat2(0.8,-0.6,0.6,0.8)*P/27.+0.31).rgb - 0.5)*(1.-0.6*lodFade);
+    // (la foto de relieve traía senderos y caminos: su paso alto dibujaba líneas; se reemplaza por ruido propio)
+    vec3 ph = vec3(0., 0., ((MAC.g-0.5)*0.55 + (DT.g-0.5)*0.35)*(1.-0.6*lodFade));
     float dry = smoothstep(0.2, 0.8, mix(big1, 0.5, lodFade*0.7)*0.9 + (MAC.a-0.5)*0.6 + ph.b*0.5);
     vec3 grass = mix(${L('olive')}, ${L('ochre')}, dry*0.7);
-    grass = mix(grass, ${L('straw')}, (smoothstep(0.4, 0.9, tus)*0.25*(1.-lodFade) + smoothstep(0.55,0.8, DT.a)*0.2)*(0.5+0.5*dry));
-    grass *= (0.9 + 0.2*tus*(1.-lodFade*0.7))*(0.85 + 0.3*fib);
+    grass = mix(grass, ${L('straw')}, (smoothstep(0.45, 0.95, tus)*0.12*(1.-lodFade) + smoothstep(0.55,0.8, DT.a)*0.2)*(0.5+0.5*dry));
+    grass *= (0.94 + 0.1*tus*(1.-lodFade*0.7))*(0.9 + 0.2*fib);
     grass *= 1. + ph.b*0.4 + (MAC.b-0.5)*0.25;
     grass = mix(grass, grass*vec3(0.92,1.0,0.86), (1.-tpatch)*0.5);
 
@@ -212,8 +205,8 @@ void main(){
     float twv = max(tw, 0.6*fp);
     float twj = twv + (DT.r-0.3)*0.25*(1.-lodFade);
     float trail = 0.85*(1.-smoothstep(twj-0.5*fp-0.06, twj+0.5*fp+0.06, tdist)) * min(1., tw/twv) * (1.-rock) * (1.-sand);
-    float tusE = mix(tus, tus*0.45+0.1, trail);
-    grass = mix(grass, mix(grass, ${L('straw')}, 0.2)*1.06, trail);
+    float tusE = mix(tus, tus*0.55+0.08, trail);
+    grass = mix(grass, mix(grass, ${L('straw')}, 0.12)*1.05, trail*0.7);
 
     // luz en la pradera: briznas verticales y matas (no Lambert)
     float NdL = dot(N, Ls);
@@ -222,21 +215,22 @@ void main(){
     float gface = 0.;
 #ifdef F_MICRO
     {
-      float tanE = max(tan(e) + dot(N.xy, TOSUN)/max(N.z,0.2), 0.012);
+      // sombras de las matas con la elevación cercana (la misma que la de las personas): 0.6–2.5× su altura
+      float tanN = tan(radians(uEn));
       float hp0 = tusE*0.4;
-      float s1 = texture(tDet, dq + TOSUN*0.18/16.).r, s2 = texture(tDet, dq + TOSUN*0.42/16.).r, s3 = texture(tDet, dq + TOSUN*0.85/16.).r;
-      float s4 = texture(tDet, dq + TOSUN*1.7/16.).r;
       float tr1 = 1.-trail*0.7;
-      float occ = max(max((s1*0.4*tr1-hp0-0.18*tanE)*0.7/0.05, (s2*0.4*tr1-hp0-0.42*tanE)*0.9/0.05), max((s3*0.4*tr1-hp0-0.85*tanE)*0.9/0.06, (s4*0.4*tr1-hp0-1.7*tanE)*0.75/0.07));
-      micro = 0.55*smoothstep(0., 1.5, occ)*(1.-lodFade)*(1.-trail*0.75);
-      gface = clamp((s1-tusE)*0.4/0.15, -1., 1.);
+      float s0 = texture(tDet, dq + TOSUN*0.05/16.).r;
+      float s1 = texture(tDet, dq + TOSUN*0.15/16.).r, s2 = texture(tDet, dq + TOSUN*0.32/16.).r, s3 = texture(tDet, dq + TOSUN*0.58/16.).r;
+      float occ = max(max((s1*0.4*tr1-hp0-0.15*tanN)/0.035, (s2*0.4*tr1-hp0-0.32*tanN)/0.045), (s3*0.4*tr1-hp0-0.58*tanN)/0.06);
+      micro = 0.62*smoothstep(0., 1., occ)*(1.-lodFade)*(1.-trail*0.75);
+      gface = clamp((tusE - s0*tr1)*0.4/0.05, -1.5, 1.5);   // > 0: la cara de la mata mira al sol
     }
 #endif
     float blades = 0.32 + 0.2*tusE + 0.14*fib;
     float gL = max(NdL, blades) * (1. - micro);
-    gL *= clamp(1. + 2.2*rel - 0.55*gface*(1.-lodFade), 0.3, 1.9);
-    gL *= smoothstep(-0.05, 0.03, NdL + 0.02);
-    float gSky = ao*(0.7 + 0.2*tusE + 0.2*fib)*(1.-0.3*micro);
+    gL *= clamp(1. + 2.2*rel + 0.8*gface*(1.-lodFade), 0.3, 1.9);
+    gL *= smoothstep(-0.3, 0.06, NdL);
+    float gSky = ao*(0.82 + 0.1*tusE + 0.08*fib)*(1.-0.22*micro);
 #else
     vec3 grass = ${L('olive')}; float gL = 0.4; float gSky = ao;
 #endif
@@ -407,6 +401,7 @@ void main(){
   col = col*(1.-OB.a) + OB.rgb;
 #endif
   o = vec4(gradeColor(max(col, 0.), uv), 1.);
+  if(uDbg.x > 0.5){ o = uDbg.x < 1.5 ? vec4(vec3(ao), 1.) : (uDbg.x < 2.5 ? vec4(N.xy*4.+0.5, 0., 1.) : vec4(vec3(fract(h)), 1.)); }
 }`;
   };
 

@@ -84,7 +84,7 @@ const vec2 SP[7] = vec2[7](${sp.map(v2).join(',')});
 const float HC[7] = float[7](${hc.map(f).join(',')});
 const vec4 NOTCH[4] = vec4[4](${Wd.notches.map((n) => `vec4(${f(n[0])},${f(n[1])},${f(n[2])},0.)`).join(',')});
 float smaxk(float a, float b, float k){ float h = clamp(0.5+0.5*(a-b)/k,0.,1.); return mix(b,a,h)+k*h*(1.-h); }
-float ridged(vec2 p){ float s=0., a=.5; for(int i=0;i<4;i++){ float n = 1.-abs(2.*vnoise(p)-1.); s += a*n*n; p = p*2.03+vec2(3.1,1.7); a*=.5; } return s/0.9375; }
+float ridged(vec2 p){ float s=0., a=.5; for(int i=0;i<4;i++){ float w = 2.*vnoise(p)-1.; float n = 1.-sqrt(w*w+0.05); s += a*n*n; p = p*2.03+vec2(3.1,1.7); a*=.5; } return s/0.72; }   // crestas redondeadas: sin pliegues que dibujen líneas
 float sdSeg(vec2 p, vec2 a, vec2 b, out float t){ vec2 pa=p-a, ba=b-a; t=clamp(dot(pa,ba)/dot(ba,ba),0.,1.); return length(pa-ba*t); }
 void spineInfo(vec2 p, out float d, out float hc, out float s){
   float best=1e9, acc=0.; d=0.; hc=0.; s=0.;
@@ -118,7 +118,8 @@ vec4 terrain(vec2 p){
       hr = mix(hr, -2.5, carve);
     }
   } else {
-    float xe = d-${f(Wd.plateau)}; xe = 0.5*(xe+sqrt(xe*xe+100.));
+    // meseta: rampa suave que vale 0 exactamente en el lomo (continuidad C1 con el lado oeste; sin pliegue ni línea de AO)
+    float xe0 = -${f(Wd.plateau)}; float xe = d-${f(Wd.plateau)}; xe = 0.5*(xe+sqrt(xe*xe+100.)) - 0.5*(xe0+sqrt(xe0*xe0+100.));
     u = xe/We;
     hr = hc*pow(max(1.-u,0.),1.6) - max(u-1.,0.)*We*0.05;
     // relieve que revela la luz rasante: ondulaciones paralelas a las curvas de nivel y montículos
@@ -138,7 +139,7 @@ vec4 terrain(vec2 p){
   // loma granítica (S4): meseta baja alargada N–S
   vec2 kq = (p-${v2([k.x, k.y])})/vec2(${f(k.rx)}, ${f(k.ry)});
   float kd = length(kq) + (fbm(p/11.)-0.5)*0.45 + (vnoise(p/4.)-0.5)*0.12;
-  float hk = ${f(k.h)}*(0.75*smoothstep(1.0, 0.9, kd) + 0.25*smoothstep(0.9, 0.3, kd))*(0.85+0.3*fbm(p/6.));
+  float hk = ${f(k.h)}*smoothstep(1.25, 0.2, kd)*(0.9+0.2*fbm(p/9.));   // loma suave: sin borde abrupto (no dibuja un contorno)
   hr += hk;
   // llanura costera (medialunas) y lomadas tierra adentro
   float sdW = length(p-${v2(bw.c)})-${f(bw.R)};
@@ -204,7 +205,10 @@ void main(){ vec2 p = ext.xy + uv*ext.z; o = terrain(p); }`);
     // 2) composición: roca por pendiente y franja costera; A = distancia a la costa
     const pComp = G.program(HEAD + `
 uniform sampler2D T0, TC; uniform vec4 ext; uniform float px;
-void main(){ vec2 p = ext.xy + uv*ext.z; vec4 a = texture(T0, uv); float c = texture(TC, uv).r;
+void main(){ vec2 p = ext.xy + uv*ext.z; vec4 a = texture(T0, uv); float c = 0.;
+  // distancia a la costa suavizada (tienda 5×5): quita la escalera del EDT sobre la máscara pixelada
+  for(int j=-2;j<=2;j++) for(int i=-2;i<=2;i++){ float w = (3.-abs(float(i)))*(3.-abs(float(j))); c += w*texture(TC, uv+vec2(float(i),float(j))*px).r; }
+  c /= 81.;
   float hx = texture(T0, uv+vec2(px,0.)).r - texture(T0, uv-vec2(px,0.)).r;
   float hy = texture(T0, uv+vec2(0.,px)).r - texture(T0, uv-vec2(0.,px)).r;
   float slope = length(vec2(hx,hy))/(2.*ext.z*px);
@@ -238,9 +242,12 @@ void main(){ vec2 p = ext.xy + uv*ext.z; vec4 a = texture(T0, uv); float c = tex
 uniform sampler2D TB, TTR; uniform vec4 ext; uniform float px;
 float hA(vec2 q){ return max(texture(TB,q).r, 0.); }
 void main(){ vec2 p = ext.xy + uv*ext.z; float cell = ext.z*px;
-  float hx = hA(uv+vec2(px,0.)) - hA(uv-vec2(px,0.)); float hy = hA(uv+vec2(0.,px)) - hA(uv-vec2(0.,px));
-  vec3 n = normalize(vec3(-hx/(2.*cell), -hy/(2.*cell), 1.));
-  float h0 = hA(uv); float lap = 0.;
+  // normal con diferencias sobre 1.5 texel en dos diagonales (filtra pliegues de un texel)
+  float r1 = 1.5*px;
+  float hx = hA(uv+vec2(r1,0.)) - hA(uv-vec2(r1,0.)) + 0.5*(hA(uv+vec2(r1,r1)) - hA(uv+vec2(-r1,r1)) + hA(uv+vec2(r1,-r1)) - hA(uv-vec2(r1,r1)));
+  float hy = hA(uv+vec2(0.,r1)) - hA(uv-vec2(0.,r1)) + 0.5*(hA(uv+vec2(r1,r1)) - hA(uv+vec2(r1,-r1)) + hA(uv+vec2(-r1,r1)) - hA(uv-vec2(r1,r1)));
+  vec3 n = normalize(vec3(-hx/(4.*1.5*cell), -hy/(4.*1.5*cell), 1.));
+  float h0 = 0.25*(hA(uv+vec2(0.5*px)) + hA(uv-vec2(0.5*px)) + hA(uv+vec2(0.5*px,-0.5*px)) + hA(uv+vec2(-0.5*px,0.5*px))); float lap = 0.;
   for(int k=0;k<2;k++){ float r = px*(k==0?3.:9.); float c = (k==0?3.:9.)*cell;
     float m = 0.25*(hA(uv+vec2(r,0.))+hA(uv-vec2(r,0.))+hA(uv+vec2(0.,r))+hA(uv-vec2(0.,r)));
     lap += (m-h0)/c; }
@@ -348,36 +355,40 @@ float pn2(vec2 p, vec2 per){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f);
 float pfbm(vec2 p, float per){ float s=0., a=.5; for(int i=0;i<5;i++){ s+=a*pn(p,per); p*=2.; per*=2.; a*=.5; } return s/0.97; }
 vec2 hc2(vec2 c, float per){ c = mod(c, per); return vec2(hash21(c+0.5), hash21(c+31.7)); }`;
     const pDet = G.program(HEAD + PER + `
+// matas de pasto (mosaico de 16 m, 1.56 cm/texel): grumos irregulares y alargados, sin estrella radial ni filas.
+// Tres escalas con desplazamiento completo dentro de la celda, densidad agrupada por un fbm lento y borde deshilachado.
 void main(){ vec2 p = uv;
-  // matas: celdas periódicas (40 por mosaico = 0.4 m si el mosaico mide 16 m)
-  // pasto corto fibroso + matas altas dispersas (estallidos radiales de hojas vistos desde arriba)
-  float fib0 = 0.;
-  fib0 += pn2(p*vec2(640.,128.), vec2(640.,128.))/4.; fib0 += pn2(p*vec2(128.,640.)+3.1, vec2(128.,640.))/4.;
-  { vec2 q2 = vec2(p.x+p.y, p.y-p.x); fib0 += pn2(q2*vec2(384.,96.), vec2(384.,96.))/4.; fib0 += pn2(q2*vec2(96.,384.)+5.3, vec2(96.,384.))/4.; }
-  float tus = 0.12 + 0.2*fib0*(0.6+0.8*pn(p*48., 48.));
-  for(int layer=0; layer<2; layer++){
-    float per = layer==0 ? 14. : 36.; float prob = layer==0 ? 0.75 : 0.55;
+  float fineA = pn(p*256., 256.), fineB = pn(p*512.+7.3, 512.), fineC = pn(p*1024.+3.1, 1024.);
+  float sward = 0.1 + 0.16*(0.5*fineA + 0.3*fineB + 0.2*fineC);          // pasto corto de base
+  float clus = smoothstep(0.32, 0.72, pfbm(p*3.+0.21, 3.));               // manchones de matas
+  float clus2 = smoothstep(0.3, 0.7, pfbm(p*7.+4.4, 7.));
+  float rag = pn(p*320.+1.7, 320.), rag2 = pn(p*700.+5.9, 700.);
+  float tus = sward;
+  for(int layer=0; layer<3; layer++){
+    float per = layer==0 ? 9. : (layer==1 ? 19. : 41.);
+    float prob = layer==0 ? 0.42*mix(0.15, 1.6, clus) : (layer==1 ? 0.5*mix(0.3, 1.4, clus*0.6+clus2*0.4) : 0.45*mix(0.5, 1.2, clus2));
     vec2 q = p*per; vec2 c0 = floor(q);
-    for(int j=-1;j<=1;j++) for(int i=-1;i<=1;i++){ vec2 c = c0+vec2(i,j); vec2 cm = mod(c, per) + float(layer)*57.; vec2 r = hc2(c, per) ;
-      float clus = smoothstep(0.35, 0.65, pfbm(((c+0.5)/per)*4., 4.));
-      if(hash21(cm+0.77) > prob*mix(0.25, 1.3, clus)) continue;
-      vec2 ctr = c + 0.15 + 0.7*r;
-      float rad = layer==0 ? (0.2+0.2*hash21(cm+3.3))*per/16. : (0.09+0.08*hash21(cm+3.3))*per/16.;
-      float hh = layer==0 ? 0.75+0.25*hash21(cm+8.1) : 0.4+0.15*hash21(cm+8.1);
-      vec2 dq = q-ctr; float d = length(dq)/rad;
-      if(d < 1.){
-        float th = atan(dq.y, dq.x); float nb = 8.+floor(8.*hash21(cm+1.9));
-        float bl = pow(0.5+0.5*cos(th*nb + 6.283*hash21(cm+4.4) + d*2.5*(hash21(cm+6.6)-0.5) + 1.5*pn(dq*3., 1024.)), 1.6);
-        float prof = pow(1.-d, 0.5);
-        tus = max(tus, hh*prof*mix(1., 0.5+0.5*bl, smoothstep(0.3, 0.8, d)));
-      } }
+    for(int j=-1;j<=1;j++) for(int i=-1;i<=1;i++){
+      vec2 c = c0+vec2(i,j); vec2 cm = mod(c, per) + float(layer)*57.;
+      if(hash21(cm+0.77) > prob) continue;
+      vec2 r = hc2(c + float(layer)*13., per);
+      vec2 ctr = c + r;                                                    // desplazamiento completo: sin filas
+      float radm = layer==0 ? 0.26+0.26*hash21(cm+3.3) : (layer==1 ? 0.13+0.14*hash21(cm+3.3) : 0.06+0.07*hash21(cm+3.3));
+      float rad = radm*per/16.;
+      float asp = 1.+0.9*hash21(cm+5.1); float ang = hash21(cm+2.9)*6.2832;
+      vec2 dq = q-ctr; dq = mat2(cos(ang),-sin(ang),sin(ang),cos(ang))*dq; dq *= vec2(1./asp, sqrt(asp))/rad;
+      float d = length(dq);
+      if(d < 1.45){
+        d += (rag-0.5)*0.55*smoothstep(0.25, 1., d) + (rag2-0.5)*0.35*smoothstep(0.55, 1.2, d);   // borde deshilachado
+        float hh = layer==0 ? 0.78+0.22*hash21(cm+8.1) : (layer==1 ? 0.5+0.2*hash21(cm+8.1) : 0.3+0.14*hash21(cm+8.1));
+        float prof = pow(max(1.-d*d, 0.), 0.65);
+        tus = max(tus, hh*prof*(0.82 + 0.18*fineB));
+      }
+    }
   }
   tus = clamp(tus, 0., 1.);
   float mid = pfbm(p*8., 8.);
-  float fine = 0.;
-  fine += pn2(p*vec2(640.,128.), vec2(640.,128.))/4.; fine += pn2(p*vec2(128.,640.)+3.1, vec2(128.,640.))/4.;
-  vec2 q2 = vec2(p.x+p.y, p.y-p.x); fine += pn2(q2*vec2(384.,96.), vec2(384.,96.))/4.; fine += pn2(q2*vec2(96.,384.)+5.3, vec2(96.,384.))/4.;
-  fine = mix(fine, pfbm(p*64., 64.), 0.35);
+  float fine = mix(0.5*fineA + 0.5*fineC, pfbm(p*64., 64.), 0.35);
   float rip = pfbm(p*16., 16.);
   o = vec4(tus, mid, fine, rip); }`);
     const tDetT = LR.target(G, 1024, 1024, { fmt: 'u8', wrap: 'repeat' });
