@@ -92,3 +92,8 @@ Ninguna anotación presenta una etimología dudosa como hecho: usar «se interpr
 ## 7. Rendimiento y revisión
 - Tiempo por cuadro ≤ 600 ms. El inicio puede tardar (muchas copias): precalcular máscaras, atlas y rejillas una sola vez.
 - Cuadros de revisión: 1, 5, 15, 22, 30, 36, 44, 53, 61.5, 65, 68, 71, 77, 83, 92, 102, 108, 116, 125, 133, 145, 152, 158, 162.5, más cada relevo en t−0,2 / t / t+0,2.
+
+## 8. Actualización de la letra (aporte del usuario; tiene prioridad sobre §3 y §5)
+- Estrofa 2, primera línea: «[del timbes] y piedra arisca». No está resuelto: sin anotación.
+- Estrofa 3, primera línea: el usuario oye «[carapebos] de los indios». Es casi seguro **«Carapé, … de los indios»**: Carapé figura entre las palabras de la canción en el texto de difusión y es la única que faltaba en la transcripción. Se agrega la anotación **«Carapé»** en 111,5–117,0 s: palabra «Carapé» / glosa «sierra de Maldonado y Lavalleja; se suele traducir “bajo”». La imagen del tramo 110,8–121 puede abrir con la gruta como «piedra de la sierra» y seguir igual.
+- Coda: «Sierra [desechar?] arena» se lee muy probablemente como **«Sierra deshecha en arena / de tanto llorarle al mar»**. Refuerza el cierre: en la playa, la plata del granito se deshace en granos de arena, de forma visible y bella, entre ≈146 y 155 s. No se subtitula.
