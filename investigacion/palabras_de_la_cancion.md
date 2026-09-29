@@ -30,3 +30,12 @@ Investigación hecha con búsquedas web el 29/09/2026. Muchas páginas estaban b
 
 ## Letra
 No se encontró una fuente verificable accesible. Falta la transcripción del usuario para anclar las estrofas a los tramos medidos del audio.
+
+## Segunda ronda: otras palabras de la letra (transcripción del usuario)
+- **Clave:** la Intendencia de Maldonado nombra entre las sierras de Aiguá las de **Coronilla, León, Sarandí y Yerbal** (https://www.maldonado.gub.uy/pagina/aigua). Eso vincula «sierras del yerbal», «coronillar» y «el indio llamó el Aiguá» con un mismo territorio serrano de Maldonado. También hay Sierras del Yerbal en Treinta y Tres (Quebrada de los Cuervos y Sierras del Yerbal); no se sabe cuál nombra la canción.
+- **«Sierras de Leonardo»:** no se halló ningún topónimo con ese nombre. La hipótesis es que se trate de «sierras de León» (Aiguá/Carapé). No se anota en pantalla hasta confirmarlo con la letra oficial.
+- **Coronilla** (*Scutia buxifolia*): árbol nativo espinoso de monte serrano y quebradas, de corteza pardo-rojiza y madera dura; también da nombre a una sierra de Aiguá. «Sangre del coronillar» es una imagen poética; no pintar rojo literal.
+- **Pororó:** maíz reventado (voz guaraní onomatopéyica). En el verso se lee como un estallido blanco, compatible con la espuma, pero es interpretación. No se anota en pantalla.
+- **Cerrazón:** niebla espesa o cielo cerrado antes de la tormenta (RAE; uso rioplatense).
+- **Esteña:** del este del país. **Orientales:** uruguayos (Banda Oriental). **Celajes:** cielo con nubes tenues de varios matices.
+- **Sierra de la Ballena:** Punta Ballena es su extremo sur. La continuidad literal de una sola cadena desde Cerro Largo hasta el mar no está verificada.
