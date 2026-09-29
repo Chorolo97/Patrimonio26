@@ -91,3 +91,24 @@ Quedó verificado:
 - Hacer la revisión histórica y de vestuario si se pasa a una versión más realista o detallada.
 - Obtener la aprobación institucional: esta versión es un borrador, no una pieza oficial.
 - Revisar la lectura en el teléfono con la interfaz real de Instagram. La zona segura es una guía, no una garantía de recorte.
+
+## Segunda ronda: tres versiones nuevas (`versiones/`)
+
+Por pedido del usuario se repensó todo con un enfoque más poético y visual, sin «macaquitos». Hubo cinco conceptos, tres jurados y una síntesis (`versiones/SELECCION.md`); después, construcción y una ronda de crítica independiente con corrección. Cada versión tiene su especificación en `versiones/<slug>/SPEC.md` y toda su configuración en `versiones/<slug>/src/config.js`.
+
+| Versión | Idea | Personas | Sierra → espuma | Cierre |
+|---|---|---|---|---|
+| `cota-cero` | Plancha grabada: noche índigo con curvas de nivel; al alba se invierte a tinta sobre papel | Siluetas grabadas, densas y quietas; colonos lejos junto a un bote | Las líneas de la punta siguen mar adentro como ecos de espuma | Papel claro, logo a color |
+| `revelado` | Las fotos reales como copias en la bandeja de revelado; el revelador hace retroceder el tiempo | La plata más densa aparece primero; colonos y vela más tarde y más lejos | El granito suelta plata que se vuelve encaje de espuma | Cielo quemado oscuro, logo blanco |
+| `luz-rasante` | Un solo amanecer visto desde arriba | Las sombras largas dibujan cabeza, manto, bastón o sombrero | Las juntas iluminadas del granito siguen en el mar como encaje | Mar oscuro, logo blanco |
+
+- **Común a las tres:** 1080×1920, 30 fps y 40 s. Siguen la estructura medida de la canción (`shared/audio/features.json`, generado con `tools/audio_features.py`). El cierre muestra título, lema, fecha y logo intacto, sin la nota de IA (`shared/lib/closing.js`).
+- **Ver:** `npm run preview` y abrir `/versiones/<slug>/`.
+- **Exportar:** `node tools/export.js --dir versiones/<slug> --audio` (usa WebGL por SwiftShader; entre 7 y 15 min por versión con 3 páginas).
+- **Material:** las fotos (`shared/assets/photos/`) y la canción no se versionan, porque el repositorio es público y los derechos no están resueltos. Ver `shared/assets/photos/LEEME.md`.
+- **Videos:** se entregaron por el chat (≈5,3 Mbps, con música, para revisión). No se suben al repositorio, que es público; `revelado` muestra las fotos.
+- **Pendiente:**
+  - confirmar al oído el corte musical y obtener la licencia de la canción;
+  - incorporar como archivos las fotos que el usuario mostró en el chat (sobre todo la aérea «113 Perdomo»);
+  - elegir versión;
+  - obtener la aprobación institucional.
