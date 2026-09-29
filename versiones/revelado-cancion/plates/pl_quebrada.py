@@ -12,17 +12,19 @@ def scene(quick=False):
     d = Xg - xc
     floor = 40 - 0.030 * (Yg - 200)
     u = np.maximum(np.abs(d) - 35, 0)
-    wall = 0.10 * u + 0.0021 * u * u
-    n1 = fbm(N, N, 90, 6, 3)                       # 360 m
-    rid = 1 - np.abs(2 * fbm(N, N, 160, 5, 4) - 1)  # crestas y cárcavas
-    walls = wall * (0.80 + 0.45 * rid) + 46 * (n1 - 0.5) * sm(30, 200, np.abs(d))
-    cap = 165 + 60 * (fbm(N, N, 120, 4, 5) - 0.5)
-    hgt = floor + (walls * cap / (walls + cap + 1e-3)) * 1.7
-    hgt += 190 * sm(2500, 3800, Yg) * (0.75 + 0.5 * fbm(N, N, 100, 4, 6))     # el fondo se cierra con una loma
-    # copas del monte (relieve fino a 12–40 m) sobre las laderas
-    forest = sm(60, 160, np.abs(d)) * (1 - sm(0.66, 0.78, fbm(N, N, 60, 4, 7)))
-    canopy = fbm(N, N, 5, 3, 8) * 0.6 + fbm(N, N, 11, 3, 9) * 0.4
-    hgt += forest * (14 * (canopy - 0.5)) 
+    # serranía baja y redondeada: perfil convexo que satura en cresta suave (sin aristas ni picos), ~100 m sobre el piso
+    n1 = fbm(N, N, 140, 3, 3)
+    cap = 92 + 34 * (gblur(fbm(N, N, 200, 2, 5), 6) * 2)
+    prof = 1 - np.exp(-(u / (150 + 90 * (fbm(N, N, 220, 2, 4) + 0.5))) ** 1.25)
+    walls = cap * prof
+    walls = walls + 9 * (gblur(n1, 4)) * sm(30, 250, np.abs(d)) + 4 * (gblur(fbm(N, N, 40, 3, 15), 2)) * sm(60, 250, np.abs(d))
+    hgt = floor + walls
+    hgt += 70 * sm(2500, 3800, Yg) * (0.8 + 0.5 * gblur(fbm(N, N, 160, 3, 6), 5))     # el fondo se cierra con lomas suaves
+    # copas del monte: bolas redondeadas (8–25 m) sobre las laderas
+    forest = sm(50, 130, np.abs(d)) * (1 - sm(0.70, 0.82, fbm(N, N, 70, 4, 7)))
+    cr1 = fbm(N, N, 9, 2, 8); cr2 = fbm(N, N, 22, 2, 9)
+    canopy = gblur(cr1, 0.8) * 0.6 + cr2 * 0.4
+    hgt += forest * (9 * canopy)
     # arroyo con meandros
     xs = xc + 70 * np.sin(Yg / 260 + 1.0) + 26 * np.sin(Yg / 97)
     ds = Xg - xs
@@ -33,17 +35,18 @@ def scene(quick=False):
     hgt = np.where(chan > 0.5, np.minimum(hgt, wl), hgt)
     hgt = np.where(chan > 0.5, wl, hgt)
     water = sm(0.45, 0.55, chan)
-    # roca
-    slope = np.hypot(*np.gradient(gblur(hgt, 1.5), dx))
-    rock = np.clip(sm(0.66, 0.74, fbm(N, N, 60, 5, 10)) * sm(90, 200, np.abs(d)) + sm(1.6, 2.4, slope) * 0.6, 0, 1)
-    rock = gblur(rock, 1.2)
-    hgt += rock * 5 * (fbm(N, N, 3, 4, 11) - 0.5)
+    # roca: pocos afloramientos claros en laderas altas, aspecto de bloques
+    upper = sm(0.35, 0.8, (hgt - floor) / 110.0) * sm(90, 200, np.abs(d))
+    rock = np.clip(sm(0.74, 0.80, fbm(N, N, 40, 5, 10)) * upper * 1.4, 0, 1)
+    rock = gblur(rock, 1.0)
+    blk = np.floor(fbm(N, N, 12, 3, 16) * 14) / 14
+    hgt += rock * (3.0 * (fbm(N, N, 4, 4, 11) - 0.5) + 5 * (blk - 0.0))
     T = Terrain(hgt, dx)
-    alb = 0.085 + 0.10 * fbm(N, N, 20, 4, 12)
+    alb = 0.065 + 0.08 * fbm(N, N, 20, 4, 12)
     alb = alb * (1 - sm(0, 1, np.exp(-(ds / 70.0) ** 2))) + 0.30 * np.exp(-(ds / 70.0) ** 2)  # pastizal en el piso
     peb = sm(0.62, 0.78, fbm(N, N, 9, 3, 13)) * bank * 0.6
     alb = alb + (0.45 - alb) * np.clip(peb * 1.3, 0, 0.7)
-    alb = alb * (1 - rock) + (0.46 + 0.12 * (fbm(N, N, 6, 4, 14) - 0.5)) * rock
+    alb = alb * (1 - rock) + (0.38 + 0.12 * (fbm(N, N, 6, 4, 14) - 0.5)) * rock
     ao = np.clip((gblur(hgt, 8) - hgt) / 10.0 + 0.9, 0.45, 1.05)
     return T, dict(alb=alb.astype(np.float32), rock=rock.astype(np.float32), water=water.astype(np.float32), ao=ao.astype(np.float32), forest=forest.astype(np.float32), x0=xc)
 

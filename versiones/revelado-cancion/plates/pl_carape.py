@@ -16,9 +16,13 @@ def scene():
         yy, xx = Yg - cy, Xg - cx
         c, s = np.cos(rot), np.sin(rot)
         u, v = (xx * c + yy * s) / rx, (-xx * s + yy * c) / ry
-        rad = (np.abs(u) ** 2.6 + np.abs(v) ** 2.6) ** (1 / 2.6) * (1 + 0.34 * (fbm(N, N, 12, 3, 60 + seed) - 0.5))
+        rad = (np.abs(u) ** 4.5 + np.abs(v) ** 4.5) ** (1 / 4.5) * (1 + 0.34 * (fbm(N, N, 12, 3, 60 + seed) - 0.5))
         core = np.clip(1 - rad, 0, 1)
-        return H * core ** (flat * 0.7) * (0.85 + 0.3 * fbm(N, N, 18, 3, 90 + seed)), sm(1.0, 0.90, rad)
+        top = core ** (flat * 0.35)
+        top = np.floor(top * 4 + 0.5) / 4 * 0.6 + top * 0.4            # gradas de fractura
+        jx = np.abs(np.sin((xx * c + yy * s) / (rx * 0.55) * 2.2 + seed)) < 0.10   # diaclasas
+        jy = np.abs(np.sin((-xx * s + yy * c) / (ry * 0.6) * 2.4 + seed * 2)) < 0.10
+        return H * top * (0.85 + 0.3 * fbm(N, N, 18, 3, 90 + seed)) * (1 - 0.45 * (jx | jy) * (core > 0.05)), sm(1.0, 0.90, rad)
     sp = [
         (1440, 1120, 5, 4, 2.0, 0.3, 0.30), (1580, 1080, 9, 6, 3.4, 0.0, 0.5), (1400, 1140, 12, 8, 5, 0.5, 0.45), (1650, 1130, 14, 10, 6.5, 0.2, 0.42),
         (1520, 1180, 18, 12, 8, -0.2, 0.45), (1340, 1200, 20, 14, 9, 0.4, 0.42), (1700, 1250, 26, 18, 14, 0.1, 0.5), (1450, 1330, 30, 20, 16, 0.0, 0.45),
@@ -38,6 +42,8 @@ def scene():
     rough = fbm(N, N, 4, 4, 72)
     h = base + hb * 1.0 + rock * 0.9 * (rough - 0.5)
     h = h + rock * 2.2 * (fbm(N, N, 9, 3, 73) - 0.5)
+    qs = fbm(N, N, 16, 2, 80) + 0.5
+    h = h + rock * 2.6 * (np.floor(qs * 6) / 6 - 0.5)          # bloques escalonados
     groove = np.exp(-((fbm(N, N, 22, 3, 79) - 0.5) / 0.03) ** 2)
     h = h - rock * 0.35 * groove
     T = Terrain(h, dx)
