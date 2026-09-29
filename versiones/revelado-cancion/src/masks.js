@@ -51,127 +51,158 @@
     return g;
   };
 
-  function rasterMask(w, h, polys, blur) {
+  function rasterMask(w, h, polys, blur, up) {
     const c = document.createElement('canvas'); c.width = w; c.height = h;
     const g = c.getContext('2d');
     const c2 = document.createElement('canvas'); c2.width = w; c2.height = h;
     const g2 = c2.getContext('2d');
     g2.fillStyle = '#fff';
-    for (const poly of polys) { g2.beginPath(); poly.forEach((p, i) => (i ? g2.lineTo(p[0], p[1]) : g2.moveTo(p[0], p[1]))); g2.closePath(); g2.fill(); }
-    g.filter = `blur(${blur}px)`; g.drawImage(c2, 0, 0);
+    for (const poly of polys) { g2.beginPath(); poly.forEach((p, i) => (i ? g2.lineTo(p[0] * up, p[1] * up) : g2.moveTo(p[0] * up, p[1] * up))); g2.closePath(); g2.fill(); }
+    if (blur > 0) g.filter = `blur(${blur * up}px)`;
+    g.drawImage(c2, 0, 0);
     const d = g.getImageData(0, 0, w, h).data, out = new Uint8Array(w * h);
     for (let i = 0; i < w * h; i++) out[i] = d[i * 4 + 3];
     return out;
   }
+  // caja envolvente (px de textura) de un polígono en px de foto
+  function polyBox(poly, up, w, h) {
+    let x0 = w, y0 = h, x1 = 0, y1 = 0;
+    for (const [x, y] of poly) { x0 = Math.min(x0, x * up); y0 = Math.min(y0, y * up); x1 = Math.max(x1, x * up); y1 = Math.max(y1, y * up); }
+    return [Math.max(0, Math.floor(x0)), Math.max(0, Math.floor(y0)), Math.min(w - 1, Math.ceil(x1)), Math.min(h - 1, Math.ceil(y1))];
+  }
 
   /*
-   * Procesa una foto. kind: 'rinconada' | 'gruta'. Devuelve {photo: ImageData, mask: ImageData, w, h, water, rock, dLand(half), ...}
+   * Procesa una foto. kind: clave de cfg.photoSpec. Devuelve {photo: ImageData, mask: ImageData, w, h (px originales), tw, th (px de textura), ...}
+   * Las coordenadas de config (polígonos, semillas, parches) van en px de la foto ORIGINAL; spec.up ≥ 1 sube la resolución de la textura.
    * Si img es null → sustituto procedural (granito fbm, arena plana, franja de mar).
+   * Textura de foto (RGBA8): R = L0, G = distancia en tierra al agua (px foto × dscale), B = distancia en el agua a la roca (px foto × dscale), A = L viva.
    */
   RV.processPhoto = function (img, kind, cfg) {
     const pc = cfg.photoSpec[kind];
-    const w = pc.w, h = pc.h;
-    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const up = pc.up || 1, w = pc.w, h = pc.h, tw = Math.round(w * up), th = Math.round(h * up);
+    const c = document.createElement('canvas'); c.width = tw; c.height = th;
     const g = c.getContext('2d', { willReadFrequently: true });
-    let lum = new Float32Array(w * h);
+    let lum = new Float32Array(tw * th);
+    const ch = pc.chan || [0.299, 0.587, 0.114];
     if (img) {
-      g.drawImage(img, 0, 0, w, h);
-      const d = g.getImageData(0, 0, w, h).data;
-      for (let i = 0; i < w * h; i++) lum[i] = (0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2]) / 255;
+      g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+      g.drawImage(img, 0, 0, tw, th);
+      const d = g.getImageData(0, 0, tw, th).data;
+      for (let i = 0; i < tw * th; i++) lum[i] = (ch[0] * d[i * 4] + ch[1] * d[i * 4 + 1] + ch[2] * d[i * 4 + 2]) / 255;
     }
-    const M = cfg.masks[kind];
-    // máscaras
+    const M = cfg.masks[kind] || {};
     const blur = cfg.maskBlur;
-    const water = rasterMask(w, h, M.water || [], blur);
-    const rock = rasterMask(w, h, M.rock || [], blur);
-    const sky = rasterMask(w, h, M.sky || [], M.skyBlur || blur);
-    // agua automática: en una zona, el mar es la región clara conectada a una semilla (sigue el borde real de la roca)
-    if (img && M.autoWater) {
-      const Z = M.autoWater, zone = rasterMask(w, h, [Z.zone], 0);
-      let x0 = w, y0 = h, x1 = 0, y1 = 0;
-      for (const [x, y] of Z.zone) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
-      x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0)); x1 = Math.min(w - 1, Math.ceil(x1)); y1 = Math.min(h - 1, Math.ceil(y1));
+    const water = rasterMask(tw, th, M.water || [], blur, up);
+    const rock = rasterMask(tw, th, M.rock || [], blur, up);
+    const sky = rasterMask(tw, th, M.sky || [], M.skyBlur || blur, up);
+    let sand = M.sand ? rasterMask(tw, th, M.sand, blur, up) : null;
+    // regiones automáticas: el borde se toma de la foto (región clara/oscura conectada a una semilla, dentro de una zona)
+    if (img) for (const Z of M.auto || []) {
+      const zone = rasterMask(tw, th, [Z.zone], 0, up);
+      const [x0, y0, x1, y1] = polyBox(Z.zone, up, tw, th);
       const bw = x1 - x0 + 1, bh = y1 - y0 + 1, lb = new Float32Array(bw * bh), R = 2;
       for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
         let s = 0, n = 0;
-        for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) { const X = x0 + x + dx, Y = y0 + y + dy; if (X >= 0 && Y >= 0 && X < w && Y < h) { s += lum[Y * w + X]; n++; } }
+        for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) { const X = x0 + x + dx, Y = y0 + y + dy; if (X >= 0 && Y >= 0 && X < tw && Y < th) { s += lum[Y * tw + X]; n++; } }
         lb[y * bw + x] = s / n;
       }
+      const lo = Z.lo != null ? Z.lo : -1, hi = Z.hi != null ? Z.hi : 2;
       const F = new Uint8Array(bw * bh), st = [];
-      for (const [sx, sy] of Z.seeds) st.push((sy - y0) * bw + (sx - x0));
+      for (const [sx, sy] of Z.seeds) st.push((Math.round(sy * up) - y0) * bw + (Math.round(sx * up) - x0));
       while (st.length) {
-        const i = st.pop(); if (F[i]) continue;
+        const i = st.pop(); if (i < 0 || i >= bw * bh || F[i]) continue;
         const x = i % bw, y = (i / bw) | 0;
-        if (lb[i] < Z.lo || zone[(y + y0) * w + x + x0] < 128) continue;
+        if (lb[i] < lo || lb[i] > hi || zone[(y + y0) * tw + x + x0] < 128) continue;
         F[i] = 1;
         if (x > 0) st.push(i - 1); if (x < bw - 1) st.push(i + 1); if (y > 0) st.push(i - bw); if (y < bh - 1) st.push(i + bw);
       }
       const c1 = document.createElement('canvas'); c1.width = bw; c1.height = bh;
       const g1 = c1.getContext('2d'), id = g1.createImageData(bw, bh);
-      for (let i = 0; i < bw * bh; i++) { id.data[i * 4 + 3] = F[i] ? 255 : 0; }
+      for (let i = 0; i < bw * bh; i++) id.data[i * 4 + 3] = F[i] ? 255 : 0;
       g1.putImageData(id, 0, 0);
       const c2 = document.createElement('canvas'); c2.width = bw; c2.height = bh;
-      const g2 = c2.getContext('2d', { willReadFrequently: true }); g2.filter = `blur(${blur * 0.7}px)`; g2.drawImage(c1, 0, 0);
+      const g2 = c2.getContext('2d', { willReadFrequently: true }); g2.filter = `blur(${blur * 0.7 * up}px)`; g2.drawImage(c1, 0, 0);
       const fb = g2.getImageData(0, 0, bw, bh).data;
+      const tgt = Z.into === 'sky' ? sky : Z.into === 'rock' ? rock : Z.into === 'sand' ? (sand = sand || new Uint8Array(tw * th)) : water;
+      const others = [water, rock, sky].concat(sand ? [sand] : []).filter((a) => a !== tgt);
       for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
-        const i = (y + y0) * w + x + x0; if (zone[i] < 128) continue;
+        const i = (y + y0) * tw + x + x0; if (zone[i] < 128) continue;
         const v = fb[(y * bw + x) * 4 + 3];
-        const wv = Math.max(v, water[i]); water[i] = wv; rock[i] = 255 - wv; sky[i] = 0;
+        tgt[i] = Math.max(tgt[i], v);
+        if (Z.carve !== false) for (const o of others) o[i] = Math.min(o[i], 255 - v);
       }
     }
-    let sand;
-    if (M.sand) sand = rasterMask(w, h, M.sand, blur);
-    else { sand = new Uint8Array(w * h); for (let i = 0; i < w * h; i++) sand[i] = Math.max(0, 255 - water[i] - rock[i] - sky[i]); }
-    if (M.rockMinus) for (let i = 0; i < w * h; i++) rock[i] = Math.max(0, 255 - sand[i] - sky[i]);
+    if (!sand) { sand = new Uint8Array(tw * th); for (let i = 0; i < tw * th; i++) sand[i] = Math.max(0, 255 - water[i] - rock[i] - sky[i]); }
+    if (M.rockMinus) for (let i = 0; i < tw * th; i++) rock[i] = Math.max(0, 255 - sand[i] - sky[i]);
     if (!img) { // sustituto procedural
       const nz = PBS.makeNoise(cfg.seed + 7);
-      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-        const i = y * w + x, gr = nz.fbm(x / 60, y / 60, 5);
-        let L = 0.62 + 0.04 * nz.fbm(x / 200, y / 30, 3);
+      for (let y = 0; y < th; y++) for (let x = 0; x < tw; x++) {
+        const i = y * tw + x, gr = nz.fbm(x / (60 * up), y / (60 * up), 5);
+        let L = 0.62 + 0.04 * nz.fbm(x / (200 * up), y / (30 * up), 3);
         L = L * (1 - rock[i] / 255) + (0.25 + 0.45 * gr) * (rock[i] / 255);
         L = L * (1 - water[i] / 255) + 0.8 * (water[i] / 255);
         L = L * (1 - sky[i] / 255) + 0.84 * (sky[i] / 255);
         lum[i] = 0.2 + L * 0.66;
       }
     }
-    // retoques: parches clonados (px de foto) para ocultar formas ambiguas
+    // retoques: parches clonados [dx,dy,sx,sy,w,h,pluma] (px de foto)
     for (const r of pc.patches || []) {
-      const [dx, dy, pw, ph, feather, sx, sy] = r;
-      for (let y = 0; y < ph; y++) for (let x = 0; x < pw; x++) {
-        const ex = Math.min(x, pw - 1 - x) / feather, ey = Math.min(y, ph - 1 - y) / feather;
+      const [dx, dy, pw, ph, feather, sx, sy] = r.map((v, i) => (i === 4 ? v : v));
+      const X0 = Math.round(dx * up), Y0 = Math.round(dy * up), SX = Math.round(sx * up), SY = Math.round(sy * up), PW = Math.round(pw * up), PH = Math.round(ph * up), FE = feather * up;
+      for (let y = 0; y < PH; y++) for (let x = 0; x < PW; x++) {
+        const ex = Math.min(x, PW - 1 - x) / FE, ey = Math.min(y, PH - 1 - y) / FE;
         const a = Math.min(1, Math.min(ex, ey)); const aa = a * a * (3 - 2 * a);
-        const di = (dy + y) * w + dx + x, si = (sy + y) * w + sx + x;
+        const di = (Y0 + y) * tw + X0 + x, si = (SY + y) * tw + SX + x;
         lum[di] = lum[di] * (1 - aa) + lum[si] * aa;
       }
     }
-    const lut = RV.monotoneLUT(pc.curve || cfg.tone.livingCurve);
-    const bp = pc.black, wp = pc.white;
-    // distancias a media resolución
-    const hw = Math.ceil(w / 2), hh = Math.ceil(h / 2);
-    const seedW = new Uint8Array(hw * hh), seedR = new Uint8Array(hw * hh);
-    for (let y = 0; y < hh; y++) for (let x = 0; x < hw; x++) {
-      const i = Math.min(h - 1, y * 2) * w + Math.min(w - 1, x * 2);
-      seedW[y * hw + x] = kind === 'gruta' ? sand[i] > 127 : water[i] > 127;
-      seedR[y * hw + x] = rock[i] > 127;
+    // suavizados locales: [x0,y0,x1,y1,radio,pluma] (px de foto): mezcla con una copia desenfocada (disimula rasgos de pareidolia)
+    for (const r of pc.soften || []) {
+      const [ax, ay, bx, by, rad, fe] = r;
+      const X0 = Math.max(0, Math.round((ax - fe) * up)), Y0 = Math.max(0, Math.round((ay - fe) * up)), X1 = Math.min(tw - 1, Math.round((bx + fe) * up)), Y1 = Math.min(th - 1, Math.round((by + fe) * up));
+      const bw = X1 - X0 + 1, bh = Y1 - Y0 + 1, cc = document.createElement('canvas'); cc.width = bw; cc.height = bh;
+      const cg = cc.getContext('2d', { willReadFrequently: true }), id = cg.createImageData(bw, bh);
+      for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) { const v = Math.max(0, Math.min(255, lum[(Y0 + y) * tw + X0 + x] * 255)); const k = (y * bw + x) * 4; id.data[k] = id.data[k + 1] = id.data[k + 2] = v; id.data[k + 3] = 255; }
+      cg.putImageData(id, 0, 0);
+      const c3 = document.createElement('canvas'); c3.width = bw; c3.height = bh;
+      const g3 = c3.getContext('2d', { willReadFrequently: true }); g3.filter = `blur(${rad * up}px)`; g3.drawImage(cc, 0, 0);
+      const bd = g3.getImageData(0, 0, bw, bh).data;
+      for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+        const px = (X0 + x) / up, py = (Y0 + y) / up;
+        const ex = Math.min(px - (ax - fe), (bx + fe) - px) / fe, ey = Math.min(py - (ay - fe), (by + fe) - py) / fe;
+        const a = Math.max(0, Math.min(1, Math.min(ex, ey))), aa = a * a * (3 - 2 * a);
+        const i = (Y0 + y) * tw + X0 + x; lum[i] = lum[i] * (1 - aa) + (bd[(y * bw + x) * 4] / 255) * aa;
+      }
     }
-    const dLand = RV.edt(seedW, hw, hh); // distancia (px media res) al agua (gruta: a la arena)
-    const dRock = RV.edt(seedR, hw, hh);
-    const photo = new ImageData(w, h), pd = photo.data;
-    const mask = new ImageData(w, h), md = mask.data;
-    const gscale = kind === 'gruta' ? 1 : 2; // gruta: distancia/2 para cubrir 260 px de cáusticas
-    for (let y = 0; y < h; y++) {
+    const lut = RV.monotoneLUT(pc.curve || cfg.tone.livingCurve);
+    const bp = pc.black, wp = pc.white, ds = pc.dscale || 1;
+    // distancias a media resolución de la textura (px de textura ×2 → px de foto ×2/up)
+    const hw = Math.ceil(tw / 2), hh = Math.ceil(th / 2), dconv = 2 / up;
+    const needD = pc.dist !== false;
+    let dLand = null, dRock = null;
+    if (needD) {
+      const seedW = new Uint8Array(hw * hh), seedR = new Uint8Array(hw * hh);
+      for (let y = 0; y < hh; y++) for (let x = 0; x < hw; x++) {
+        const i = Math.min(th - 1, y * 2) * tw + Math.min(tw - 1, x * 2);
+        seedW[y * hw + x] = pc.landSeed === 'sand' ? sand[i] > 127 : water[i] > 127;
+        seedR[y * hw + x] = rock[i] > 127;
+      }
+      dLand = RV.edt(seedW, hw, hh); dRock = RV.edt(seedR, hw, hh);
+    }
+    const photo = new ImageData(tw, th), pd = photo.data;
+    const mask = new ImageData(tw, th), md = mask.data;
+    for (let y = 0; y < th; y++) {
       const hy = Math.min(hh - 1, y >> 1);
-      for (let x = 0; x < w; x++) {
-        const i = y * w + x, k = i * 4, hi = hy * hw + Math.min(hw - 1, x >> 1);
+      for (let x = 0; x < tw; x++) {
+        const i = y * tw + x, k = i * 4, hi = hy * hw + Math.min(hw - 1, x >> 1);
         let L0 = (lum[i] - bp) / (wp - bp); L0 = L0 < 0 ? 0 : L0 > 1 ? 1 : L0;
         pd[k] = Math.round(L0 * 255);
-        pd[k + 1] = Math.min(255, Math.round(dLand[hi] * gscale));
-        pd[k + 2] = Math.min(255, Math.round(dRock[hi] * 2));
+        if (needD) { pd[k + 1] = Math.min(255, Math.round(dLand[hi] * dconv * ds)); pd[k + 2] = Math.min(255, Math.round(dRock[hi] * dconv * ds)); }
         pd[k + 3] = Math.round(lut[Math.round(L0 * 1023)] * 255);
         md[k] = water[i]; md[k + 1] = rock[i]; md[k + 2] = sand[i]; md[k + 3] = sky[i];
       }
     }
-    return { photo, mask, w, h, water, rock, sand, sky, dLand, dRock, hw, hh, lum };
+    return { photo, mask, w, h, tw, th, water, rock, sand, sky, dLand, dRock, hw, hh, lum, up };
   };
 
   // Grano: 1024² periódico. R ruido blanco; G grano fino (≈1,5 px); B grumos de archivo (≈2,3 px); A grumos de figura (≈2,6 px)

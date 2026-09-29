@@ -88,6 +88,11 @@
       chain(ctx, [[6.4, 76, 3.1], [9.6, 62, 2.6], [10.4, 50, 2.1]]);
       ell(ctx, 10.5, 47.6, 2.1, 3.0, 0.1);
     }
+    if (o.bundle) { // atado sostenido a la cadera: el brazo baja por delante y la mano lo sujeta
+      chain(ctx, [[6.0, 75, 3.0], [10.0, 63, 2.5], [12.0, 55, 2.1]]);
+      ell(ctx, 13.4, 47.6, 5.4, 6.4, 0.25);
+      ell(ctx, 12.4, 53.8, 2.5, 3.0, 0.1);
+    }
     if (o.staffFront) { // vara recta sostenida vertical delante del cuerpo
       stick(ctx, 14.2, -0.5, 14.2, 108, 2.1);
       chain(ctx, [[6.2, 75, 3.0], [11.4, 66.5, 2.5], [13.2, 63.6, 2.2]]);
