@@ -3,3 +3,8 @@ out/
 # Audio de la canción: licencia no verificada; no se versiona.
 reel/assets/audio/*
 !reel/assets/audio/LEEME.md
+shared/assets/audio/*
+!shared/assets/audio/LEEME.md
+# Fotografías de referencia: derechos de reproducción no resueltos; el repositorio es público.
+shared/assets/photos/*
+!shared/assets/photos/LEEME.md

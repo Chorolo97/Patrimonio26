@@ -1,9 +1,10 @@
 /*
- * Exporta el reel a MP4 H.264 renderizando cada cuadro en Chromium sin interfaz (Playwright) y codificando con ffmpeg.
- *   node tools/export.js                 → out/reel_mudo.mp4
- *   node tools/export.js --audio         → además out/reel_con_audio.mp4 (si existe el archivo de audio)
- *   node tools/export.js --stills 1,9,17 → solo cuadros sueltos en out/stills/
- * Variables: FFMPEG (ruta a ffmpeg con libx264), WORKERS (páginas en paralelo).
+ * Exporta un reel a MP4 H.264 renderizando cada cuadro en Chromium sin interfaz (Playwright) y codificando con ffmpeg.
+ *   node tools/export.js [--dir reel]              → out/<carpeta>/reel_mudo.mp4
+ *   node tools/export.js --dir versiones/x --audio → además out/<carpeta>/reel_con_audio.mp4 (si existe el audio)
+ *   node tools/export.js --dir versiones/x --stills 1,9,17 → cuadros sueltos en out/<carpeta>/stills/
+ * La carpeta debe tener render.html que exponga window.reelReady y window.frameAt(t).
+ * Variables: FFMPEG (ruta a ffmpeg con libx264), WORKERS (páginas en paralelo), CRF, MAXRATE.
  */
 const fs = require('fs');
 const path = require('path');
@@ -12,16 +13,19 @@ const { chromium } = require('playwright');
 const { serve } = require('./serve');
 
 const ROOT = path.join(__dirname, '..');
-const OUT = path.join(ROOT, 'out');
 const FFMPEG = process.env.FFMPEG || 'ffmpeg';
 const args = process.argv.slice(2);
 const opt = (k) => { const i = args.indexOf(k); return i >= 0 ? (args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : true) : null; };
+const DIR = String(opt('--dir') || 'reel').replace(/\/+$/, '');
+const OUT = path.join(ROOT, 'out', path.basename(DIR));
 
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
-  const server = await serve(path.join(ROOT, 'reel'));
-  const url = `http://127.0.0.1:${server.address().port}/render.html`;
-  const browser = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
+  const server = await serve(ROOT);
+  const url = `http://127.0.0.1:${server.address().port}/${DIR}/render.html`;
+  const launch = { args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--disable-gpu-sandbox'] };
+  if (process.env.CHROMIUM) launch.executablePath = process.env.CHROMIUM;
+  const browser = await chromium.launch(launch);
   const cfg = await (async () => {
     const p = await browser.newPage();
     await p.goto(url);
@@ -34,6 +38,7 @@ async function main() {
   for (let i = 0; i < nWorkers; i++) {
     const p = await browser.newPage({ viewport: { width: cfg.width, height: cfg.height } });
     p.on('pageerror', (e) => console.error('Error en página:', e.message));
+    p.on('console', (m) => { if (m.type() === 'error') console.error('Consola:', m.text()); });
     await p.goto(url);
     const info = await p.evaluate(() => window.reelReady);
     if (i === 0) {
@@ -52,6 +57,7 @@ async function main() {
       const p = pages[i % pages.length];
       const b64 = await p.evaluate((tt) => window.frameAt(tt), t);
       fs.writeFileSync(path.join(dir, `t${t.toFixed(2).padStart(5, '0')}.png`), Buffer.from(b64, 'base64'));
+      console.log(`  t=${t}`);
     }));
     console.log(`Cuadros sueltos en ${dir}`);
     await browser.close(); server.close();
@@ -61,7 +67,7 @@ async function main() {
   const total = Math.round(cfg.duration * cfg.fps);
   const video = path.join(OUT, 'reel_mudo.mp4');
   const ff = spawn(FFMPEG, ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-c:v', 'png', '-framerate', String(cfg.fps), '-i', '-',
-    '-c:v', 'libx264', '-preset', 'slow', '-crf', '19', '-maxrate', '9M', '-bufsize', '18M', '-tune', 'film', '-pix_fmt', 'yuv420p', '-r', String(cfg.fps),
+    '-c:v', 'libx264', '-preset', 'slow', '-crf', process.env.CRF || '19', '-maxrate', process.env.MAXRATE || '9M', '-bufsize', '18M', '-tune', 'film', '-pix_fmt', 'yuv420p', '-r', String(cfg.fps),
     '-frames:v', String(total), '-movflags', '+faststart', video], { stdio: ['pipe', 'inherit', 'inherit'] });
   const ffDone = new Promise((res, rej) => ff.on('close', (c) => (c === 0 ? res() : rej(new Error('ffmpeg terminó con código ' + c)))));
 
@@ -94,7 +100,7 @@ async function main() {
 
   if (opt('--audio')) {
     const A = cfg.audio;
-    const src = path.join(ROOT, 'reel', A.src);
+    const src = path.join(ROOT, DIR, A.src);
     if (!fs.existsSync(src)) console.warn(`Audio no encontrado (${A.src}); solo se entrega la versión muda.`);
     else {
       const withAudio = path.join(OUT, 'reel_con_audio.mp4');
