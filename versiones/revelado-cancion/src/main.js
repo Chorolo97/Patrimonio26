@@ -380,6 +380,8 @@ window.createReel = async function (canvas, cfg) {
     };
   };
 
+  const syncBuf = new Float32Array(4), syncB8 = new Uint8Array(4);
+  const sync = (fl) => { if (fl) G.readPixels(0, 0, 1, 1, G.RGBA, G.FLOAT, syncBuf); else { G.bindFramebuffer(G.FRAMEBUFFER, null); G.readPixels(0, 0, 1, 1, G.RGBA, G.UNSIGNED_BYTE, syncB8); } };
   const noteCfg = cfg.noteStyle;
   function render(t) {
     const frame = Math.round(t * FPS);
@@ -408,9 +410,9 @@ window.createReel = async function (canvas, cfg) {
     G.bindBuffer(G.ARRAY_BUFFER, triBuf);
     const prof = window.__prof ? [performance.now()] : null;
     if (Aold) gl.draw(progFor(Aold), { ...common, ...printU(Aold, t, true), uIsOld: 1 }, fboA);
-    if (prof) { G.finish(); prof.push(performance.now()); }
+    if (prof) { sync(true); prof.push(performance.now()); }
     gl.draw(progFor(B), { ...common, ...printU(B, t, false), uIsOld: 0 }, fboB);
-    if (prof) { G.finish(); prof.push(performance.now()); }
+    if (prof) { sync(true); prof.push(performance.now()); }
     const sink = isLab ? PBS.smooth((t - R.t0) / (R.dur * 0.5)) : 0;
     const selB = selAmt(B, t), selA = Aold ? selAmt(Aold, t) : 0;
     gl.draw(compProg, {
@@ -418,7 +420,7 @@ window.createReel = async function (canvas, cfg) {
       uGrain: grainTex, uPB: fboB.tex, uPA: Aold ? fboA.tex : dummy, uGOff: [(frame * 389) % 1024, (frame * 683 + 211) % 1024],
       uBurn: [burnP, Bn.yFull, Bn.yZero, burnDens], uBurn2: [t * Bn.drift, Bn.edgeAmp, burnFeather, 1],
     });
-    if (prof) { G.finish(); prof.push(performance.now()); }
+    if (prof) { sync(false); prof.push(performance.now()); }
     // plata → espuma (y roca → arena): dos pases conmutativos
     for (const sh of shed) {
       const sc = sh.sc, P = prints[sc.print];
@@ -438,7 +440,7 @@ window.createReel = async function (canvas, cfg) {
       G.blendEquation(G.FUNC_ADD); G.disable(G.BLEND);
       G.bindBuffer(G.ARRAY_BUFFER, triBuf);
     }
-    if (prof) { G.finish(); prof.push(performance.now()); }
+    if (prof) { sync(false); prof.push(performance.now()); }
     ctx.drawImage(gl.canvas, 0, 0);
     if (prof) { ctx.getImageData(0, 0, 1, 1); prof.push(performance.now()); window.__prof.last = prof.slice(1).map((v, i) => Math.round(v - prof[i])); }
     for (const n of notes) drawNote(ctx, n, t);
