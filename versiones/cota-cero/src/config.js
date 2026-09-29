@@ -1,0 +1,87 @@
+/* ÚNICO lugar de configuración de «Cota cero». Todo lo ajustable vive aquí. */
+window.REEL_CONFIG = {
+  title: 'Cota cero',
+  subtitle: 'Una plancha grabada que se mueve: la línea de costa de Punta Ballena se vuelve espuma',
+  seed: 20261003,
+  width: 1080, height: 1920, fps: 30, duration: 40,
+  safeZone: { x0: 100, x1: 900, y0: 250, y1: 1500 },
+  assets: '../../shared/assets/',
+  featuresUrl: '../../shared/audio/features.json',
+  audio: { src: '../../shared/assets/audio/punta_ballena.mp3', AUDIO_START_SECONDS: 47.8, fadeIn: 0.4, fadeOut: 1.5, volume: 1 },
+  logo: { file: 'logo/01_logo_uvpb_color.png', width: 620 },
+  closingAt: 35.0,
+  closing: { y: 290, ink: '#22211F', ink2: '#3A362E', margin: 30, skyFadeFrom: 34.2, skyMin: 0.1 },
+  photos: { grotto: { file: 'photos/clean/gruta_limpia.jpg', crop: [1164, 0, 973, 1730] } },
+
+  palette: {
+    night: { plate: '#16202E', land: '#E6DDC8', sea: '#8FA3AE', foam: '#F2ECDF', trail: '#B8863B', tooth: 0.025 },
+    day: { paper: '#ECE4D2', granite: '#22211F', grass: '#5E5B40', sand: '#6E604A', sea: '#4E6773', ochre: '#B8863B', grain: 0.03, tone: 0.015 },
+  },
+  lines: { spacing: 14, jitter: 0.12, minWidth: 2.2, maxWidthFrac: 0.55, wobble: 0.35, stippleMin: 2.4 },
+
+  markers: { breath: [12.8, 15.05], stanza: 15.05, decay: 38.5 },
+  onsetThreshold: 0.85, onsetMinGap: 0.4,
+  onsetsFallback: [1.70, 4.97, 7.03, 7.63, 8.07, 10.53, 15.07, 15.67, 18.77, 19.17, 19.90, 22.23, 26.40, 27.30, 29.40, 30.63, 37.80, 38.53],
+  sea: { base: 0.3, decayTo: 0.3 },
+  ripple: { cPlan: 170, cWorld: 40, tau: 2.2, maxPx: 6, bigAt: 15.07, bigGain: 1.8 },
+
+  world: {
+    extent: [-1700, -700, 1700, 2700],
+    bakeRes: 2048, edtRes: 1024,
+    spine: [[-420, 3300], [-260, 2500], [-110, 1700], [10, 1000], [70, 420], [55, 60], [40, -40]],
+    crest: [95, 88, 74, 62, 46, 18, 0],
+    Ww: [35, 55], We: [250, 420], plateau: [40, 90], drop: 6,
+    notches: [{ y: 180, w: 11, d: 8 }, { y: 330, w: 14, d: 9 }, { y: 520, w: 9, d: 7 }, { y: 760, w: 13, d: 10 }],
+    // Costa de las bahías: la playa oeste (Portezuelo) pasa por los pies de la cámara oblicua.
+    westBeach: [[-150, 1262], [-330, 1330], [-470, 1378], [-640, 1450], [-900, 1640], [-1150, 1900], [-1400, 2300], [-1600, 2750]],
+    eastBeach: [[250, 640], [330, 700], [560, 820], [820, 960], [1100, 1150], [1350, 1360], [1500, 1500], [1760, 1700]],
+    lomas: { amp: [5, 25], fromY: 1800 },
+    seaFloor: [-2, -12],
+    trail: [[-330, 2800], [-240, 2400], [-160, 2000], [-95, 1650], [-35, 1300], [10, 1000], [45, 700], [60, 420], [120, 470], [190, 560], [250, 650], [300, 715], [330, 760]],
+    trailMeander: 15,
+    tip: [40, -40],
+  },
+
+  views: {
+    plan: { center: [40, 900], widthM: 1500, overscan: 1.1, push: [2.8, 7.6, 1.0, 1.05], pull: [15.05, 19.5, 1.05, 1.0] },
+    contours: { step: 5, major: 25, majorExtra: 0.8, fadeFw: 1 / 6 },
+    hachure: { dsep: 12, dtest: 5.5, step: 1.5, minLen: 8, maxLen: 60, minSlopeDeg: 3, wMin: 0.9, wMax: 4.2, slopeFull: 40, sunAz: 96, sunEl: 12 },
+    grotto: { push: [7.6, 15.0, 1.0, 1.03], center: [540, 1100], dsep: 13, work: [540, 960] },
+    oblique: {
+      cam: [-655, 1528, 4.0], yawOffsetDeg: 3.0, fovDeg: 50, focal: 2059, k: 1.4,
+      horizon: [[20.5, 880], [35.0, 1060]], bufH: 2200, bufHorizon: 1060, mesh: 512,
+      contourStep: 3, near: 120, box: [-350, -200, 700, 1150],
+      sky: { spacing: 14, topW: 2.6, clouds: [[330, 70], [610, 55]] },
+      sea: { dlog: 0.056, waveAmp: 5, swashM: 4, swellFrom: 160 },
+      echo: { aspect: 3.4, rho0: 14, lambda: 0.33, speed: 0.55, gap: 5, front: 11 },
+    },
+  },
+
+  fronts: {
+    M1: { t: [7.6, 8.6], noise: 20, feather: 35, line: 2 },
+    M2: { t: [12.8, 15.05], dur: [12.8, 15.0], noise: 30, feather: 60, line: 3 },
+    M3: { t: [19.5, 20.5], noise: 16, feather: 40, line: 2 },
+  },
+
+  timeline: { emerge: [0.2, 2.8], trailCut: [2.8, 3.5], ringsOpen: [0.2, 2.8], echoes: 32.5, echoFull: 35.0 },
+
+  figures: {
+    grotto: [
+      { id: 'G2', pose: 'standBundle', foot: [983, 1904], h: 283, facing: -1 },
+      { id: 'G3', pose: 'childCrouch', foot: [262, 1876], h: 110, facing: 1 },
+      { id: 'G1', pose: 'elderSeated', foot: [151, 1887], h: 165, facing: 1 },
+    ],
+    oblique: [
+      { id: 'O4', pose: 'elderSeated', d: 16, x: 150, facing: 1, rock: true },
+      { id: 'O1', pose: 'standBundle', d: 14, x: 330, facing: -1 },
+      { id: 'O2', pose: 'childCrouch', d: 14.5, x: 420, facing: -1 },
+      { id: 'O3', pose: 'gather', d: 19, x: 560, facing: 1 },
+      { id: 'O5', pose: 'standStaff', d: 20, x: 700, facing: 1 },
+      { id: 'C1', pose: 'colonBundle', d: 28, x: 918, facing: -1, cut: [24.6, 25.8] },
+      { id: 'C2', pose: 'colonStick', d: 27.5, x: 992, facing: -1, cut: [25.2, 26.4] },
+      { id: 'O6', pose: 'childCrouch', d: 13, x: 245, facing: 1, cut: [37.8, 40.0], cutEnd: 0.7 },
+    ],
+    boat: { d: 31.5, x: 1052, cut: [24.6, 25.4] },
+    ship: { x: 905, at: 22.23, dur: 0.9, hull: 50 },
+  },
+};
