@@ -45,24 +45,34 @@ window.createReel = async function (canvas, cfg) {
   // ---------- fotos, máscaras, distancias ----------
   const mat = {};
   const shedPrints = new Set((cfg.shed || []).map((s) => s.print));
-  const photoKeys = Object.keys(cfg.photos);
+  const onlyKey = (location.search.match(/maskonly=(\w+)/) || [])[1];
+  const photoKeys = onlyKey ? [onlyKey] : Object.keys(cfg.photos);
   for (const key of photoKeys) {
     let img = null;
-    try { img = await PBS.loadImage(cfg.assets + cfg.photos[key]); } catch (e) { warnings.push('FALTA FOTO ' + cfg.photos[key]); }
+    const psrc = cfg.photos[key].indexOf('plates/') === 0 ? cfg.photos[key] : cfg.assets + cfg.photos[key];   // placas propias (SPEC §9): dentro de la carpeta de la versión
+    try { img = await PBS.loadImage(psrc); } catch (e) { warnings.push('FALTA FOTO ' + cfg.photos[key]); }
+    let mimg = null;
+    if (cfg.photoSpec[key].maskFile) { try { mimg = await PBS.loadImage(cfg.photoSpec[key].maskFile); } catch (e) { warnings.push('FALTA MÁSCARA ' + cfg.photoSpec[key].maskFile); } }
     lg('foto ' + key + ' cargada');
-    mat[key] = RV.processPhoto(img, key, cfg);
+    mat[key] = RV.processPhoto(img, key, cfg, mimg);
     lg('foto ' + key + ' procesada');
-    if (/dbg/.test(location.search)) { // superposición de máscaras para revisar polígonos (sólo depuración)
-      const M = mat[key], s = Math.max(1, Math.round(M.tw / 900)), W2c = Math.floor(M.tw / s), H2c = Math.floor(M.th / s), c = document.createElement('canvas'); c.width = W2c; c.height = H2c;
+    if (/dbg/.test(location.search)) { // superposición de máscaras y rejilla en px de foto (sólo depuración)
+      const M = mat[key], s = Math.max(1, M.tw / 1100), W2c = Math.floor(M.tw / s), H2c = Math.floor(M.th / s), c = document.createElement('canvas'); c.width = W2c; c.height = H2c;
       const g = c.getContext('2d'), id = g.createImageData(W2c, H2c);
       for (let y = 0; y < H2c; y++) for (let x = 0; x < W2c; x++) {
-        const i = y * s * M.tw + x * s, k = (y * W2c + x) * 4, L = M.photo.data[i * 4] * 0.55, wa = M.water[i] / 255, ro = M.rock[i] / 255, sa = M.sand[i] / 255, sk = M.sky[i] / 255;
-        id.data[k] = L + 110 * ro + 100 * sa; id.data[k + 1] = L + 100 * sa + 60 * sk; id.data[k + 2] = L + 120 * wa + 110 * sk; id.data[k + 3] = 255;
+        const i = Math.floor(y * s) * M.tw + Math.floor(x * s), k = (y * W2c + x) * 4, L = M.photo.data[i * 4] * 0.6, wa = M.water[i] / 255, ro = M.rock[i] / 255, sa = M.sand[i] / 255, sk = M.sky[i] / 255;
+        id.data[k] = L + 120 * ro + 90 * sa; id.data[k + 1] = L + 90 * sa + 70 * sk; id.data[k + 2] = L + 130 * wa + 110 * sk; id.data[k + 3] = 255;
       }
       g.putImageData(id, 0, 0);
+      const sp = cfg.photoSpec[key], f = W2c / sp.w;
+      g.font = '12px sans-serif'; g.lineWidth = 1;
+      for (let x = 0; x < sp.w; x += 100) { g.strokeStyle = x % 500 ? 'rgba(255,255,0,.25)' : 'rgba(255,255,0,.7)'; g.beginPath(); g.moveTo(x * f, 0); g.lineTo(x * f, H2c); g.stroke(); g.fillStyle = '#ff0'; g.fillText(x, x * f + 2, 11); }
+      for (let y = 0; y < sp.h; y += 100) { g.strokeStyle = y % 500 ? 'rgba(255,255,0,.25)' : 'rgba(255,255,0,.7)'; g.beginPath(); g.moveTo(0, y * f); g.lineTo(W2c, y * f); g.stroke(); g.fillStyle = '#ff0'; g.fillText(y, 2, y * f + 11); }
       (window.__rvDbg = window.__rvDbg || {})[key] = c.toDataURL('image/png');
     }
   }
+  const only = /maskonly/.test(location.search);
+  if (only) return { warnings, logo: false, render() {} };
 
   // ---------- GL ----------
   lg('fotos listas');
@@ -88,6 +98,8 @@ window.createReel = async function (canvas, cfg) {
   const dummy = gl.texture(null, { w: 1, h: 1 });
   const grainTex = gl.texture(RV.grainImage(cfg.seed + 5), { nearest: true, repeat: true });
   const fboA = gl.target(cfg.width, cfg.height, { float: true }), fboB = gl.target(cfg.width, cfg.height, { float: true });
+  const fboFA = gl.target(cfg.width, cfg.height, { float: true }), fboFB = gl.target(cfg.width, cfg.height, { float: true });
+  const fboFront = gl.target(cfg.width / 2, cfg.height / 2, { float: true });
   // virado: LUT 256×3 (fila 0 copia viva, fila 1 archivo, fila 2 selenio), recalculada por cuadro (calidez de luces y centroide)
   const toneTex = gl.texture(null, { w: 256, h: 3 });
   const toneBuf = new Uint8Array(256 * 3 * 4);
@@ -154,9 +166,15 @@ window.createReel = async function (canvas, cfg) {
     prints[pc.id] = P;
   }
   const progs = {};
-  const progFor = (P) => progs[P.id] || (progs[P.id] = gl.program(RV.printSource({ kind: P.kind, archive: !!P.archive, groups: P.groupIds })));
+  const rinsePrints = new Set(cfg.rinse.prints || []);
+  // variantes de programa: sólo se compila el código que hace falta (con frente / sin frente, con enjuague, con quemado), porque el código muerto también cuesta
+  const progFor = (P, front) => { const key = P.id + (front ? '+F' : ''); return progs[key] || (progs[key] = gl.program(RV.printSource({ kind: P.kind, archive: !!P.archive, front, rinse: rinsePrints.has(P.id) }))); };
+  const figProgs = {};
+  const figProgFor = (P, front) => { const rinse = rinsePrints.has(P.id), key = (front ? 'F' : 'f') + (rinse ? 'R' : 'r'); return figProgs[key] || (figProgs[key] = gl.program(RV.figSource({ front, rinse }))); };
+  let frontProg = null;
+  const compProgs = {};
+  const compFor = (front, dual, burn) => { const key = (front ? 'F' : 'f') + (dual ? 'D' : 'd') + (burn ? 'B' : 'b'); return compProgs[key] || (compProgs[key] = gl.program(RV.compositeSource({ front, dual, burn }))); };
   lg('atlas listos');
-  const compProg = gl.program(RV.compositeSource());
 
   // ---------- secciones y relevos ----------
   const secs = cfg.sections;
@@ -269,7 +287,7 @@ window.createReel = async function (canvas, cfg) {
     const c = document.createElement('canvas'); c.width = cfg.width; c.height = a.h || 420;
     const g = c.getContext('2d', { willReadFrequently: true });
     const lines = [];
-    const wrap = (text, font, maxW) => { g.font = font; const words = text.split(' '), out = []; let cur = ''; for (const w of words) { const t = cur ? cur + ' ' + w : w; if (g.measureText(t).width <= maxW || !cur) cur = t; else { out.push(cur); cur = w; } } if (cur) out.push(cur); return out; };
+    const wrap = (text, font, maxW) => { g.font = font; const out = []; for (const part of text.split('\n')) { const words = part.split(' '); let cur = ''; for (const w of words) { const t = cur ? cur + ' ' + w : w; if (g.measureText(t).width <= maxW || !cur) cur = t; else { out.push(cur); cur = w; } } if (cur) out.push(cur); } return out; };
     const S = cfg.noteStyle;
     if (a.word) lines.push(...wrap(a.word, PBS.font('serif', a.wordSize || S.wordSize, 500, true), S.maxW).map((t) => ({ t, font: PBS.font('serif', a.wordSize || S.wordSize, 500, true), size: a.wordSize || S.wordSize, gap: 0 })));
     if (a.gloss) lines.push(...wrap(a.gloss, PBS.font('sans', S.glossSize, 400), S.maxW).map((t, i) => ({ t, font: PBS.font('sans', S.glossSize, 400), size: S.glossSize, gap: i ? 0 : S.gapWordGloss })));
@@ -291,7 +309,7 @@ window.createReel = async function (canvas, cfg) {
     const nr = PBS.rng(cfg.seed + 700 + Math.round(a.t0 * 10)), noise = new Uint8Array(cfg.width * c.height);
     // ruido de nucleación con grumos (blanco + una pasada de suavizado): las letras se «revelan» por granos
     for (let i = 0; i < noise.length; i++) noise[i] = (nr() * 255) | 0;
-    return { a, c, g, noise, yTop: a.y, cache: null };
+    return { a, c, g, noise, yTop: a.y, textH: y - 40 + 30, cache: null };
   });
   const noteScratch = document.createElement('canvas'); noteScratch.width = cfg.width; noteScratch.height = 420;
   const noteG = noteScratch.getContext('2d');
@@ -353,44 +371,88 @@ window.createReel = async function (canvas, cfg) {
   };
   const selAmt = (P, t) => { const k = P.sel; if (!k) return 0; if (t <= k[0][0]) return k[0][1]; const l = k[k.length - 1]; if (t >= l[0]) return l[1]; let i = 0; while (i < k.length - 2 && t > k[i + 1][0]) i++; return PBS.lerp(k[i][1], k[i + 1][1], PBS.smooth((t - k[i][0]) / (k[i + 1][0] - k[i][0]))); };
   const lin = (t, a, b) => PBS.clamp((t - a) / (b - a), 0, 1);
+  const Z4 = [0, 0, 0, 0];
   const parFor = (P, t) => {
     const f = P.fx;
     switch (P.id) {
-      case 'aerea': return [[f.flow || 5, 0, 0, 0], [0, 0, 0, 0]];
-      case 'canal': return [[f.swash || 26, 0, 0, 0], [0, 0, 0, 0]];
-      case 'relieve': return [[PBS.lerp(f.alba.y0, f.alba.y1, PBS.ease(lin(t, f.alba.t0, f.alba.t1))), f.alba.gain, 0, 0], [0, 0, 0, 0]];
-      case 'rompiente': return [[PBS.smooth(lin(t, f.grow.t0, f.grow.t0 + f.grow.dur)), PBS.smooth(lin(t, f.shade.t0, f.shade.t0 + f.shade.dur)), 0, 0], [0, 0, 0, 0]];
-      case 'gruta': return [[f.pop, 0, 0, 0], [0, 0, 0, 0]];
-      case 'estratos': return [[PBS.lerp(f.fog.y0, f.fog.y1, PBS.ease(lin(t, f.fog.t0, f.fog.t1))), f.fog.density * PBS.smooth(lin(t, f.fog.t0, f.fog.t0 + 1.5)), 0, 0], [0, 0, 0, 0]];
-      case 'playa': return [f.tufts[0], f.tufts[1]];
-      default: return [[0, 0, 0, 0], [0, 0, 0, 0]];
+      case 'aerea': return [[f.flow || 5, 0, 0, 0], Z4, Z4];
+      case 'canal': return [[f.swash || 26, 0, 0, 0], Z4, Z4];
+      case 'relieve': return [[PBS.lerp(f.alba.y0, f.alba.y1, PBS.ease(lin(t, f.alba.t0, f.alba.t1))), f.alba.gain, 0, 0], Z4, Z4];
+      case 'rompiente': return [[PBS.smooth(lin(t, f.grow.t0, f.grow.t0 + f.grow.dur)), PBS.smooth(lin(t, f.shade.t0, f.shade.t0 + f.shade.dur)), 0, 0], Z4, Z4];
+      case 'gruta': return [[f.pop, 0, 0, 0], Z4, Z4];
+      case 'carape': return [[f.pop ? f.pop.amp : 0, f.pop ? f.pop.t0 : 0, f.pop ? f.pop.t1 : 0, 0], Z4, Z4];
+      case 'estratos': return [[PBS.lerp(f.fog.y0, f.fog.y1, PBS.ease(lin(t, f.fog.t0, f.fog.t1))), f.fog.density * PBS.smooth(lin(t, f.fog.t0, f.fog.t0 + 1.5)), 0, 0], Z4, Z4];
+      case 'playa': return [f.tufts[0], f.tufts[1], [f.erode ? PBS.smooth(lin(t, f.erode.t0, f.erode.t1)) * f.erode.max : 0, 0, 0, 0]];
+      default: return [Z4, Z4, Z4];
     }
   };
 
   const printU = (P, t, isOld) => {
     const [ox, oy, z] = camAt(P, t), ms = mat[P.photo], c = P.c || [540, 960];
-    const grp = [0, 1, 2, 3].map((i) => (isOld ? 1 : (P.gdef[i + 1] ? devGroup(P, i + 1, t) : 0)));
-    const go = [1, 2, 3, 4].map((g) => [...groupOffset(P, g, t), 0, 0]);
-    const [par, par2] = parFor(P, t);
-    // caja unión de los grupos (ya desplazados): fuera de ella no se busca ninguna figura
-    let gU = [1e5, 1e5, -1e5, -1e5];
-    [1, 2, 3, 4].forEach((g, i) => { const b = P.gbox[i]; if (b[0] > b[2]) return; gU = [Math.min(gU[0], b[0] + go[i][0]), Math.min(gU[1], b[1] + go[i][1]), Math.max(gU[2], b[2] + go[i][0]), Math.max(gU[3], b[3] + go[i][1])]; });
-    return {
-      uPhoto: tex[P.photo].photo, uMask: tex[P.photo].mask, uFigA: P.figA, uFigB: P.figB,
-      geo: [ox, oy, P.scale, z], geo2: [c[0], c[1], ms.w, ms.h], boxA: P.boxA, boxB: P.boxB, grp,
-      gcw: [1, 2, 3, 4].map((g) => (P.gdef[g] && P.gdef[g].coreW != null ? P.gdef[g].coreW : 0.72)),
-      gb1: P.gbox[0], gb2: P.gbox[1], gb3: P.gbox[2], gb4: P.gbox[3], go1: go[0], go2: go[1], go3: go[2], go4: go[3], gU, par, par2,
-    };
+    const [par, par2, par3] = parFor(P, t);
+    return { uPhoto: tex[P.photo].photo, uMask: tex[P.photo].mask, geo: [ox, oy, P.scale, z], geo2: [c[0], c[1], ms.w, ms.h], par, par2, par3 };
+  };
+  // caja de fotos → rectángulo de pantalla (tijera) para el pase de figuras
+  const screenRect = (P, t, box) => {
+    const [ox, oy, z] = camAt(P, t), c = P.c || [540, 960];
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    for (const [qx, qy] of [[box[0], box[1]], [box[2], box[1]], [box[0], box[3]], [box[2], box[3]]]) {
+      const px = ((qx - ox) * P.scale - c[0]) * z + c[0], py = ((qy - oy) * P.scale - c[1]) * z + c[1];
+      x0 = Math.min(x0, px); y0 = Math.min(y0, py); x1 = Math.max(x1, px); y1 = Math.max(y1, py);
+    }
+    x0 = Math.max(0, Math.floor(x0 - 26)); y0 = Math.max(0, Math.floor(y0 - 26)); x1 = Math.min(cfg.width, Math.ceil(x1 + 26)); y1 = Math.min(cfg.height, Math.ceil(y1 + 26));
+    return x1 > x0 && y1 > y0 ? [x0, y0, x1 - x0, y1 - y0] : null;
+  };
+  // pase de figuras: un dibujo por grupo, recortado a su recuadro; devuelve si hay algo dibujado
+  const figPass = (P, t, isOld, common, dualPass, front) => {
+    const sets = [];
+    if (P.boxA[0] > -1e4) sets.push({ grp: 0, tex: P.figA, box: P.boxA, gb: [0, 0, 0, 0], go: [0, 0], devG: 1, cw: 0.82, seed: 17, rect: [P.boxA[0], P.boxA[1], P.boxA[0] + P.boxA[2], P.boxA[1] + P.boxA[3]] });
+    for (const g of P.groupIds) {
+      const gb = P.gbox[g - 1], go = groupOffset(P, g, t), devG = isOld ? 1 : devGroup(P, g, t);
+      if (devG <= 0.0005) continue;
+      sets.push({ grp: g, tex: P.figB, box: P.boxB, gb, go, devG, cw: P.gdef[g] && P.gdef[g].coreW != null ? P.gdef[g].coreW : 0.72, seed: 29, rect: [gb[0] + go[0], gb[1] + go[1], gb[2] + go[0], gb[3] + go[1]] });
+    }
+    if (!sets.length) return null;
+    const fbo = isOld ? fboFA : fboFB;
+    const rects = [];
+    G.bindFramebuffer(G.FRAMEBUFFER, fbo.fb); G.disable(G.SCISSOR_TEST); G.clearColor(0, 0, 0, 0); G.clear(G.COLOR_BUFFER_BIT);
+    G.enable(G.BLEND); G.blendEquation(G.MAX); G.blendFunc(G.ONE, G.ONE); G.enable(G.SCISSOR_TEST);
+    const cam = printU(P, t, isOld);
+    for (const s of sets) {
+      const r = screenRect(P, t, s.rect); if (!r) continue;
+      rects.push([r[0], r[1], r[0] + r[2], r[1] + r[3]]);
+      G.scissor(r[0], cfg.height - r[1] - r[3], r[2], r[3]);
+      gl.draw(figProgFor(P, front), { ...common, geo: cam.geo, geo2: cam.geo2, uFig: s.tex, uBox: s.box, uGb: s.gb, uGo: [s.go[0], s.go[1], 0, 0], uDevG: s.devG, uCW: s.cw, uSeed: s.seed, uGrpSet: s.grp ? 1 : 0, uIsOld: isOld ? 1 : 0, uDualPass: dualPass }, fbo);
+    }
+    G.disable(G.SCISSOR_TEST); G.disable(G.BLEND); G.blendEquation(G.FUNC_ADD);
+    return rects.length ? [rects.reduce((u, r) => [Math.min(u[0], r[0]), Math.min(u[1], r[1]), Math.max(u[2], r[2]), Math.max(u[3], r[3])])] : null;
   };
 
+  const rectU = (pre, rs) => Object.fromEntries([0, 1, 2, 3, 4].map((i) => [pre + i, rs && rs[i] ? rs[i] : [0, 0, 0, 0]]));
   const syncBuf = new Float32Array(4), syncB8 = new Uint8Array(4);
   const sync = (fl) => { if (fl) G.readPixels(0, 0, 1, 1, G.RGBA, G.FLOAT, syncBuf); else { G.bindFramebuffer(G.FRAMEBUFFER, null); G.readPixels(0, 0, 1, 1, G.RGBA, G.UNSIGNED_BYTE, syncB8); } };
+  // quemado local bajo la anotación vigente: sube y baja con la anotación
+  const noteBurn = (t) => {
+    const S = cfg.noteStyle;
+    for (const n of notes) {
+      const a = n.a; if (t < a.t0 - 0.05 || t > a.t1 + 0.05) continue;
+      const k = PBS.smooth((t - a.t0) / S.reveal) * (1 - PBS.smooth((t - (a.t1 - S.fadeOut)) / S.fadeOut));
+      return [n.yTop - 30, n.yTop + n.textH + 10, (a.burn != null ? a.burn : S.burn) * k, S.burnFeather];
+    }
+    return [0, 0, 0, 1];
+  };
   const noteCfg = cfg.noteStyle;
-  function render(t) {
-    const frame = Math.round(t * FPS);
+  // plan de un cuadro: relevo vigente, copia nueva y (durante el relevo) la vieja, y qué variantes de programa hacen falta
+  const planAt = (t) => {
     let k = 0; for (let i = 0; i < relays.length; i++) if (t >= relays[i].t0) k = i;
     const R = relays[k], Rp = k > 0 ? relays[k - 1] : null;
     const B = prints[R.print], Aold = Rp && t < R.tBleached ? prints[Rp.print] : null;
+    const front = t <= R.tDone, burn = t >= cfg.burn.t0 - 0.05;
+    return { R, B, Aold, front, burn, key: [B.id, front ? 1 : 0, Aold ? Aold.id : '-', burn ? 1 : 0].join('|') };
+  };
+  function render(t) {
+    const frame = Math.round(t * FPS);
+    const { R, B, Aold, front, burn } = planAt(t);
     const mt = Mt(t), S = Sph(t);
     const rn = cfg.rinse, rinseW = Math.min(PBS.smooth((t - (rn.t0 - 0.3)) / 0.3), PBS.smooth((rn.t1 + 0.3 - t) / 0.3));
     const ra = t - rn.drop;
@@ -406,22 +468,25 @@ window.createReel = async function (canvas, cfg) {
     const common = {
       uT: mt, uTr: t, uS: S, uWt: W2(t), uLow: at(A.low, t), uHigh: at(A.high, t), uRms: at(A.rms, t), uWtex: wTex, uNoise: noiseTex, uNW: NW,
       uMen: [R.t0, R.s0, R.v, R.a], uMen2: [R.bow, R.noiseAmp, R.seed, menVisible(R, t) ? 1 : 0], uMen3: [R.figFront, R.tau0, R.induction, R.wet], uMen4: [isLab ? 1 : 0, R.delay || 0, 0, 0],
-      uFigTau: R.figTau, uDevAll: t > R.tDone ? 1 : -1,
+      uFigTau: R.figTau, uDevAll: front ? -1 : 1,
       uRinse: [rn.wobble * rinseW, ringR, ringA, rn.deepen * rinseW],
       uSurge: sg, uSwashPhase: S * 1.35, uGrottoPhase: S * cfg.grotto.swashRate + 0.4, uOn: onsetInfo(t), uTone: toneTex,
     };
     G.bindBuffer(G.ARRAY_BUFFER, triBuf);
     const prof = window.__prof ? [performance.now()] : null;
-    if (Aold) gl.draw(progFor(Aold), { ...common, ...printU(Aold, t, true), uIsOld: 1, uDualPass: 1 }, fboA);
+    if (front) { frontProg = frontProg || gl.program(RV.frontSource()); gl.draw(frontProg, common, fboFront); common.uFront = fboFront.tex; }
+    let hasFA = null;
+    if (Aold) { gl.draw(progFor(Aold, true), { ...common, ...printU(Aold, t, true), uIsOld: 1, uDualPass: 1 }, fboA); hasFA = figPass(Aold, t, true, common, 1, true); }
     if (prof) { sync(true); prof.push(performance.now()); }
-    gl.draw(progFor(B), { ...common, ...printU(B, t, false), uIsOld: 0, uDualPass: Aold ? 1 : 0 }, fboB);
+    gl.draw(progFor(B, front), { ...common, ...printU(B, t, false), uIsOld: 0, uDualPass: Aold ? 1 : 0 }, fboB);
+    const hasFB = figPass(B, t, false, common, Aold ? 1 : 0, front);
     if (prof) { sync(true); prof.push(performance.now()); }
     const sink = isLab ? PBS.smooth((t - R.t0) / (R.dur * 0.5)) : 0;
     const selB = selAmt(B, t), selA = Aold ? selAmt(Aold, t) : 0;
-    gl.draw(compProg, {
+    gl.draw(compFor(front, !!Aold, burn), {
       ...common, uFrame: frame, uDual: Aold ? 1 : 0, uBArch: B.archive ? 1 : 0, uSink: sink, uSelB: selB, uSelA: selA,
-      uGrain: grainTex, uPB: fboB.tex, uPA: Aold ? fboA.tex : dummy, uGOff: [(frame * 389) % 1024, (frame * 683 + 211) % 1024],
-      uBurn: [burnP, Bn.yFull, Bn.yZero, burnDens], uBurn2: [t * Bn.drift, Bn.edgeAmp, burnFeather, 1],
+      uGrain: grainTex, uPB: fboB.tex, uPA: Aold ? fboA.tex : dummy, uFB: fboFB.tex, uFA: fboFA.tex, uHasFA: hasFA ? 1 : 0, uHasFB: hasFB ? 1 : 0, ...rectU('uRA', hasFA), ...rectU('uRB', hasFB), uGOff: [(frame * 389) % 1024, (frame * 683 + 211) % 1024],
+      uBurn: [burnP, Bn.yFull, Bn.yZero, burnDens], uBurn2: [t * Bn.drift, Bn.edgeAmp, burnFeather, 1], uNote: noteBurn(t),
     });
     if (prof) { sync(false); prof.push(performance.now()); }
     // plata → espuma (y roca → arena): dos pases conmutativos
@@ -457,14 +522,17 @@ window.createReel = async function (canvas, cfg) {
     for (const w of r.warnings || []) warnings.push(w);
   }
   if (logo) warnings.push('Logo 441 px ampliado a 620: pedir versión vectorial o PNG grande');
-  // precalentar cada programa (el primer dibujo de cada uno compila y enlaza de forma perezosa en SwiftShader)
-  const warm = [...new Set(relays.map((R) => R.t0 + 0.4).concat(relays.map((R) => R.tBleached + 0.3)))].sort((a, b) => a - b);
+  // precalentar cada variante de programa que se usa en algún cuadro (el primer dibujo de cada una compila y enlaza de forma perezosa en SwiftShader)
   lg('antes de precalentar');
-  for (const tw of warm) { render(Math.max(0, tw)); G.finish(); lg('precalentado ' + tw.toFixed(1)); }
-  G.finish();
+  {
+    const seen = new Set(), warm = [];
+    for (let k = 0; k < N; k++) { const t = k / FPS, p = planAt(t); if (!seen.has(p.key)) { seen.add(p.key); warm.push(t); } }
+    for (const tw of warm) { render(tw); G.finish(); }
+    lg('precalentado: ' + warm.length + ' variantes');
+  }
   // banco de pruebas de rendimiento (sólo depuración): tiempo de un pase de copia con el código modificado por `mod`
   const perfPass = (id, t, mod, n = 3) => {
-    const P = prints[id]; let src = RV.printSource({ kind: P.kind, archive: !!P.archive, groups: P.groupIds }); if (mod) src = mod(src);
+    const P = prints[id]; let src = RV.printSource({ kind: P.kind, archive: !!P.archive, front: !!(window.__perfFront), rinse: false }); if (mod) src = mod(src);
     const prog = gl.program(src);
     const R = relays.find((r) => r.print === id), rn = cfg.rinse;
     const common = { uT: Mt(t), uTr: t, uS: Sph(t), uWt: W2(t), uLow: at(A.low, t), uHigh: at(A.high, t), uRms: at(A.rms, t), uWtex: wTex, uNoise: noiseTex, uNW: NW, uMen: [R.t0, R.s0, R.v, R.a], uMen2: [R.bow, R.noiseAmp, R.seed, 0], uMen3: [0, 0.45, 0.03, 0], uMen4: [0, 0, 0, 0], uFigTau: 0.3, uDevAll: 1, uRinse: [0, -1e4, 0, 0], uSurge: 0, uSwashPhase: Sph(t) * 1.35, uGrottoPhase: 0.4, uOn: onsetInfo(t), uTone: toneTex, uIsOld: 0, uDualPass: 0 };
@@ -473,6 +541,16 @@ window.createReel = async function (canvas, cfg) {
     gl.draw(prog, u, fboB); sync(true);
     const a = performance.now(); for (let i = 0; i < n; i++) { gl.draw(prog, u, fboB); sync(true); } return (performance.now() - a) / n;
   };
-  window.__rv = { perfPass, W, Sph, onsets, relays: relays.map((R) => ({ print: R.print, type: R.type, t0: R.t0, tLast: R.tLast, tBleached: R.tBleached, tDone: R.tDone, v: R.v })), shed: shed.map((s) => ({ print: s.sc.print, n: s.n, cand: s.cand })), prints, camAt, initMs: performance.now() - T0INIT, groups: Object.fromEntries(Object.entries(prints).map(([id, P]) => [id, Object.fromEntries(Object.entries(P.gdef).map(([g, d]) => [g, d.start]))])) };
+  const perfComp = (t, mod, n = 3) => {
+    let src = RV.compositeSource({ front: !!window.__perfFront, dual: !!window.__perfDual, burn: false }); if (mod) src = mod(src);
+    const prog = gl.program(src);
+    render(t);
+    const R = relays[relays.length - 1];
+    const u = { uT: Mt(t), uTr: t, uS: Sph(t), uWt: W2(t), uRms: at(A.rms, t), uWtex: wTex, uNoise: noiseTex, uNW: NW, uMen: [R.t0, R.s0, R.v, R.a], uMen2: [R.bow, R.noiseAmp, R.seed, window.__perfDual ? 1 : 0], uMen3: [0, 0.45, 0.03, 0], uMen4: [0, 0, 0, 0], uFigTau: 0.3, uDevAll: window.__perfDual ? -1 : 1, uFront: fboFront.tex, ...rectU('uRA', [[0, 0, 1, 1]]), ...rectU('uRB', [[0, 0, 1, 1]]), uRinse: [0, -1e4, 0, 0], uTone: toneTex, uFrame: 5, uDual: 0, uBArch: 0, uSink: 0, uSelB: 0, uSelA: 0, uGrain: grainTex, uPB: fboB.tex, uPA: fboA.tex, uFB: fboFB.tex, uFA: fboFA.tex, uHasFA: 0, uHasFB: 0, uGOff: [0, 0], uBurn: [0, 870, 1010, 1.2], uBurn2: [0, 25, 560, 1] };
+    G.bindBuffer(G.ARRAY_BUFFER, triBuf);
+    gl.draw(prog, u, null); sync(false);
+    const a = performance.now(); for (let i = 0; i < n; i++) { gl.draw(prog, u, null); sync(false); } return (performance.now() - a) / n;
+  };
+  window.__rv = { perfComp, perfPass, W, Sph, onsets, relays: relays.map((R) => ({ print: R.print, type: R.type, t0: R.t0, tLast: R.tLast, tBleached: R.tBleached, tDone: R.tDone, v: R.v })), shed: shed.map((s) => ({ print: s.sc.print, n: s.n, cand: s.cand })), prints, camAt, initMs: performance.now() - T0INIT, groups: Object.fromEntries(Object.entries(prints).map(([id, P]) => [id, Object.fromEntries(Object.entries(P.gdef).map(([g, d]) => [g, d.start]))])) };
   return { warnings, logo: !!logo, render };
 };

@@ -112,3 +112,10 @@ El usuario aportó fotos de referencia de autoría desconocida. **Solo sirven co
 | **carape** | cumbre de sierra de pastizal con bloques y crestones de granito claro, cielo amplio. | 110,5–117,5, «Carapé vos de los indios», con personas indígenas; la gruta pasa a 117,5–124,5 junto con los estratos |
 
 La foto **yerbal** queda para 75,6–83,6 (coronillar, viraje cálido).
+
+## 10. Decisiones de implementación (segunda pasada)
+- **§3 sobre estimaciones:** todos los relevos, secciones y anotaciones siguen los tiempos del §3 y §8: laboratorio 19,06 · relieve 40,0 · abra 50,42 · quebrada 62,52 · tacuarí 69,9 · cerrito 72,8 · yerbal 75,64 · rompiente 83,6 · portezuelo 90,28 · carapé 110,2 · … · playa 124,5.
+- **§3 vs §9 en 117,5–124,5:** la letra manda. «Cerrazón» (117,84) sale sobre **estratos** desde 117,5 (la niebla baja hasta 120,4); la **gruta** entra a 120,6, justo antes de «que el indio llamó el Aiguá» y de la anotación (120,8). El pororó (≈114–117) revienta sobre el granito claro de la placa **carape**, y la gruta conserva su espuma suave en la boca con cada golpe.
+- **Placas propias (§9):** `plates/make_plates.sh` las genera una sola vez (numpy + Pillow; heightfield con marcha de rayos, sin fotos de referencia). Cada una lleva su máscara (`*_mask.png`, PNG opaco: R agua, G roca, B cielo).
+- **Etimología de Yaguarón:** el texto se mantiene como en el §5 hasta que se actualice el SPEC (la glosa afirma «del guaraní yaguá»; conviene «se suele derivar»).
+- La letra completa no se copia: `config.js` sólo guarda las primeras palabras de cada verso.

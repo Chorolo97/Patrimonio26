@@ -77,7 +77,7 @@
    * Si img es null → sustituto procedural (granito fbm, arena plana, franja de mar).
    * Textura de foto (RGBA8): R = L0, G = distancia en tierra al agua (px foto × dscale), B = distancia en el agua a la roca (px foto × dscale), A = L viva.
    */
-  RV.processPhoto = function (img, kind, cfg) {
+  RV.processPhoto = function (img, kind, cfg, maskImg) {
     const pc = cfg.photoSpec[kind];
     const up = pc.up || 1, w = pc.w, h = pc.h, tw = Math.round(w * up), th = Math.round(h * up);
     const c = document.createElement('canvas'); c.width = tw; c.height = th;
@@ -86,7 +86,9 @@
     const ch = pc.chan || [0.299, 0.587, 0.114];
     if (img) {
       g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+      if (pc.preblur) g.filter = `blur(${pc.preblur * up}px)`;
       g.drawImage(img, 0, 0, tw, th);
+      g.filter = 'none';
       const d = g.getImageData(0, 0, tw, th).data;
       for (let i = 0; i < tw * th; i++) lum[i] = (ch[0] * d[i * 4] + ch[1] * d[i * 4 + 1] + ch[2] * d[i * 4 + 2]) / 255;
     }
@@ -132,6 +134,14 @@
         if (Z.carve !== false) for (const o of others) o[i] = Math.min(o[i], 255 - v);
       }
     }
+    if (maskImg) { // placas propias: las máscaras salen de la propia generación (PNG opaco: R agua, G roca, B cielo; la arena es lo que sobra)
+      const mc = document.createElement('canvas'); mc.width = tw; mc.height = th;
+      const mg = mc.getContext('2d', { willReadFrequently: true }); mg.imageSmoothingEnabled = true; mg.drawImage(maskImg, 0, 0, tw, th);
+      const md0 = mg.getImageData(0, 0, tw, th).data;
+      for (let i = 0; i < tw * th; i++) { water[i] = md0[i * 4]; rock[i] = md0[i * 4 + 1]; sky[i] = md0[i * 4 + 2]; }
+    }
+    if (M.rockWins) for (let i = 0; i < tw * th; i++) water[i] = Math.min(water[i], 255 - rock[i]);
+    if (M.rockRest) for (let i = 0; i < tw * th; i++) rock[i] = Math.max(rock[i], 255 - Math.max(water[i], sky[i], sand ? sand[i] : 0));
     if (!sand) { sand = new Uint8Array(tw * th); for (let i = 0; i < tw * th; i++) sand[i] = Math.max(0, 255 - water[i] - rock[i] - sky[i]); }
     if (M.rockMinus) for (let i = 0; i < tw * th; i++) rock[i] = Math.max(0, 255 - sand[i] - sky[i]);
     if (!img) { // sustituto procedural
@@ -154,6 +164,30 @@
         const a = Math.min(1, Math.min(ex, ey)); const aa = a * a * (3 - 2 * a);
         const di = (Y0 + y) * tw + X0 + x, si = (SY + y) * tw + SX + x;
         lum[di] = lum[di] * (1 - aa) + lum[si] * aa;
+      }
+    }
+    // borrado de trazos finos dibujados sobre la foto (alambrados, rayas): cada píxel cerca de la polilínea toma el valor del mismo lado, a distancia (px de foto): {pts, hw, fe}
+    for (const E of pc.erase || []) {
+      const hw = E.hw * up, fe = E.fe * up, off = hw + fe + 3 * up, pts = E.pts.map((p) => [p[0] * up, p[1] * up]);
+      let bx0 = tw, by0 = th, bx1 = 0, by1 = 0;
+      for (const [x, y] of pts) { bx0 = Math.min(bx0, x); by0 = Math.min(by0, y); bx1 = Math.max(bx1, x); by1 = Math.max(by1, y); }
+      bx0 = Math.max(0, Math.floor(bx0 - off)); by0 = Math.max(0, Math.floor(by0 - off)); bx1 = Math.min(tw - 1, Math.ceil(bx1 + off)); by1 = Math.min(th - 1, Math.ceil(by1 + off));
+      const bw = bx1 - bx0 + 1, bh = by1 - by0 + 1, dmin = new Float32Array(bw * bh).fill(1e9), nxA = new Float32Array(bw * bh), nyA = new Float32Array(bw * bh), sgA = new Float32Array(bw * bh);
+      for (let k = 0; k < pts.length - 1; k++) {
+        const [ax, ay] = pts[k], [bx, by] = pts[k + 1], dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy || 1, len = Math.sqrt(len2), nx = -dy / len, ny = dx / len, r = hw + fe + 1;
+        const x0 = Math.max(bx0, Math.floor(Math.min(ax, bx) - r)), x1 = Math.min(bx1, Math.ceil(Math.max(ax, bx) + r)), y0 = Math.max(by0, Math.floor(Math.min(ay, by) - r)), y1 = Math.min(by1, Math.ceil(Math.max(ay, by) + r));
+        for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+          let u = ((x - ax) * dx + (y - ay) * dy) / len2; u = u < 0 ? 0 : u > 1 ? 1 : u;
+          const px = ax + dx * u - x, py = ay + dy * u - y, d = Math.hypot(px, py), i = (y - by0) * bw + (x - bx0);
+          if (d < dmin[i]) { dmin[i] = d; nxA[i] = nx; nyA[i] = ny; sgA[i] = ((x - (ax + dx * u)) * nx + (y - (ay + dy * u)) * ny) >= 0 ? 1 : -1; }
+        }
+      }
+      const src = Float32Array.from(lum);
+      for (let y = by0; y <= by1; y++) for (let x = bx0; x <= bx1; x++) {
+        const i = (y - by0) * bw + (x - bx0), d = dmin[i]; if (d > hw + fe) continue;
+        const sx = Math.min(tw - 1, Math.max(0, Math.round(x + nxA[i] * sgA[i] * (off - Math.max(0, (nxA[i] * sgA[i] * 0)))))), sy = Math.min(th - 1, Math.max(0, Math.round(y + nyA[i] * sgA[i] * off)));
+        const tgt = src[sy * tw + sx], t = d <= hw ? 1 : 1 - (d - hw) / fe, w = t * t * (3 - 2 * t);
+        lum[y * tw + x] = lum[y * tw + x] * (1 - w) + tgt * w;
       }
     }
     // suavizados locales: [x0,y0,x1,y1,radio,pluma] (px de foto): mezcla con una copia desenfocada (disimula rasgos de pareidolia)

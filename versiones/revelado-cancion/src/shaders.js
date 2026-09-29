@@ -15,6 +15,7 @@ float vnI(vec2 x, uint seed){ vec2 i = floor(x), f = fract(x); f = f*f*(3.-2.*f)
   float a = hashI(k, seed), b = hashI(k+ivec2(1,0), seed), c = hashI(k+ivec2(0,1), seed), d = hashI(k+ivec2(1,1), seed);
   return mix(mix(a,b,f.x), mix(c,d,f.x), f.y); }
 const float LP = 0.955;
+float hgRel(vec4 tf, vec2 q){ return clamp((tf.y - q.y)/tf.z, 0., 1.); }
 uniform sampler2D uTone; // virado precalculado por cuadro: fila 0 copia viva, fila 1 archivo, fila 2 selenio
 vec3 toneColor(float L, float arch){ return texture(uTone, vec2((clamp(L, 0., 1.)*255. + 0.5)/256., 1./6. + arch/3.)).rgb; }
 vec3 toneSel(float L){ return texture(uTone, vec2((clamp(L, 0., 1.)*255. + 0.5)/256., 5./6.)).rgb; }
@@ -33,32 +34,23 @@ float cellEdge(vec2 x){
 }
 `;
 
-  // ---------- menisco: geometría cerrada del frente y desarrollo por píxel (común a los dos pases) ----------
-  const FRONT = `
+  // ---------- menisco: el frente y el desarrollo por píxel se calculan UNA vez por cuadro en un pase de media resolución
+  // (pase de frente); las copias, las figuras y la composición lo leen con una sola muestra bilineal (er es casi lineal: el bilineal es exacto) ----------
+  const FRONT_UNI = `
 uniform float uTr, uWt, uFigTau, uDevAll;
 uniform sampler2D uWtex, uNoise;
 uniform vec4 uMen, uMen2, uMen3, uMen4; // t0, s0, v, ángulo | curva, ruido, semilla, visible | figuras por el frente, τ0, inducción, empuje húmedo | laboratorio (0/1), retardo
 uniform vec4 uRinse;                    // ondulación, radio del anillo, amplitud del anillo, oscurecimiento
 uniform float uNW;                      // cuadros de la tabla W
 vec2 menDir(){ float a = uMen.w; return vec2(sin(a), -cos(a)); }
-float wAt(float t){ return t <= 0. ? t * 3.0 : texture(uWtex, vec2((t*30. + 0.5)/uNW, 0.5)).b; }
-float front(vec2 p, out float tarr, out float perp){
-  vec2 d = menDir(); vec2 r = p - vec2(540., 1920.);
-  float proj = dot(r, d); perp = dot(r, vec2(-d.y, d.x));
-  if (uMen4.x > 0.5) { // relevo de laboratorio: sin frente; la copia sube desde el blanco, con un leve desfase por zonas
-    float nl = texture(uNoise, vec2(p.x/1500. + uMen2.z, p.y/2300.)).b;
-    tarr = uMen.x + uMen4.y + 0.35*nl; return 1e5;
-  }
-  vec4 nn = texture(uNoise, vec2(perp/2400. + uMen2.z, 0.13 + 0.07*uMen2.z));
-  float n1 = nn.b - 0.5, n2 = nn.r - 0.5;
-  float n = uMen2.y * (1.6*n1 + 0.9*n2) + uMen2.x * (perp/540.)*(perp/540.);
-  tarr = uMen.x + (proj + n - uMen.y) / uMen.z;
-  return (uTr - tarr) * uMen.z; // px por detrás del frente
-}
+`;
+  const FRONT_CONSUME = `
+uniform sampler2D uFront;   // er (px por detrás del frente), desarrollo del fondo, de las figuras y desplazamiento de refracción
 struct FR { float er; float perp; float dev; float devFig; vec2 pr; };
 FR frontAll(vec2 p0){
   FR f; f.er = 1e5; f.perp = 0.; f.dev = 1.; f.devFig = 1.; f.pr = p0;
   vec2 p = p0;
+#if RINSE_ON
   // enjuague: la copia descansa bajo agua quieta (sólo refracción, sin líneas claras)
   if (uRinse.x > 0.) {
     p += uRinse.x * vec2(sin(p.y/260. + uTr*0.9), cos(p.x/310. + uTr*0.7));
@@ -68,27 +60,56 @@ FR frontAll(vec2 p0){
     p += normalize(rr + 1e-4) * uRinse.z * skyK * exp(-x*x/900.) * sin(x/9.);
     f.pr = p;
   }
-  float tarr = 0., perp = 0.;
-  if (uDevAll < 0. || uMen2.w > 0.5) {
-    float e = front(p, tarr, perp);
-    float wob = (uMen2.w > 0.5 && uMen4.x < 0.5) ? 1.8*sin(perp/95. + uTr*4.1) + 0.9*sin(perp/37. - uTr*6.3) : 0.;
-    f.er = e - wob; f.perp = perp;
-    if (uMen2.w > 0.5 && f.er > 0. && f.er < 34. && uMen4.x < 0.5) {
-      float nl = texture(uNoise, vec2(perp/1300. + 1.3*uMen2.z, 0.37)).g;
-      float k = 1. - f.er/34.;
-      f.pr = p + menDir() * (8. + 9.*nl) * k*k;
-    }
-  }
-  if (uDevAll < 0.) {
-    float tau = uWt - wAt(tarr);
-    f.dev = 1. - exp(-max(0., tau - uMen3.z)/uMen3.y);
-    f.devFig = 1. - exp(-max(0., tau - 0.03)/uFigTau);
-    f.devFig = max(f.devFig, uMen3.x * smoothstep(0., 100., f.er));
-    f.dev = max(f.dev, uMen3.w * smoothstep(0., 90., f.er) * step(0., tau)); // el papel mojado se ve más hondo enseguida
-  }
+#endif
+#if FRONT_ON
+  vec4 fr = texture(uFront, vec2(p0.x/1080., 1. - p0.y/1920.));
+  f.er = fr.x; f.dev = fr.y; f.devFig = fr.z;
+  f.pr = p + menDir() * fr.w;
+  vec2 d = menDir();
+  f.perp = dot(p0 - vec2(540., 1920.), vec2(-d.y, d.x));
+#endif
   return f;
 }
 `;
+  RV.frontSource = function () {
+    return `#version 300 es
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+in vec2 uv; out vec4 o;
+${FRONT_UNI}
+float wAt(float t){ return t <= 0. ? t * 3.0 : texture(uWtex, vec2((t*30. + 0.5)/uNW, 0.5)).b; }
+void main(){
+  vec2 p = vec2(uv.x * 1080., (1. - uv.y) * 1920.);
+  vec2 d = menDir(); vec2 r = p - vec2(540., 1920.);
+  float proj = dot(r, d), perp = dot(r, vec2(-d.y, d.x));
+  float tarr, er, disp = 0.;
+  if (uMen4.x > 0.5) { // relevo de laboratorio: sin frente; la copia sube desde el blanco, con un leve desfase por zonas
+    float nl = texture(uNoise, vec2(p.x/1500. + uMen2.z, p.y/2300.)).b;
+    tarr = uMen.x + uMen4.y + 0.35*nl; er = 30000.;
+  } else {
+    vec4 nn = texture(uNoise, vec2(perp/2400. + uMen2.z, 0.13 + 0.07*uMen2.z));
+    float n1 = nn.b - 0.5, n2 = nn.r - 0.5;
+    float n = uMen2.y * (1.6*n1 + 0.9*n2) + uMen2.x * (perp/540.)*(perp/540.);
+    tarr = uMen.x + (proj + n - uMen.y) / uMen.z;
+    float e = (uTr - tarr) * uMen.z;                   // px por detrás del frente
+    float wob = uMen2.w > 0.5 ? 1.8*sin(perp/95. + uTr*4.1) + 0.9*sin(perp/37. - uTr*6.3) : 0.;
+    er = clamp(e - wob, -30000., 30000.);
+    if (uMen2.w > 0.5 && er > 0. && er < 34.) {        // lente de refracción detrás de la cresta
+      float nl = texture(uNoise, vec2(perp/1300. + 1.3*uMen2.z, 0.37)).g;
+      float k = 1. - er/34.;
+      disp = (8. + 9.*nl) * k*k;
+    }
+  }
+  float tau = uWt - wAt(tarr);
+  float dev = 1. - exp(-max(0., tau - uMen3.z)/uMen3.y);
+  float devFig = 1. - exp(-max(0., tau - 0.03)/uFigTau);
+  devFig = max(devFig, uMen3.x * smoothstep(0., 100., er));
+  dev = max(dev, uMen3.w * smoothstep(0., 90., er) * step(0., tau)); // el papel mojado se ve más hondo enseguida
+  o = vec4(er, dev, devFig, disp);
+}
+`;
+  };
 
   // ---------- pase de copia ----------
   const PRINT_HEAD = `#version 300 es
@@ -98,49 +119,47 @@ precision highp int;
 precision highp sampler2D;
 in vec2 uv; out vec4 o;
 ${COMMON}
-uniform float uT, uS, uLow, uHigh, uRms, uSurge, uSwashPhase, uGrottoPhase, uIsOld;
+uniform float uT, uS, uLow, uHigh, uRms, uSurge, uSwashPhase, uGrottoPhase, uIsOld, uDualPass;
 uniform vec4 uOn;       // último arranque (t, índice), anterior (t, índice)
-${FRONT}
-uniform sampler2D uPhoto, uMask, uFigA, uFigB;
-uniform vec4 geo, geo2, boxA, boxB, grp, gcw, gb1, gb2, gb3, gb4, go1, go2, go3, go4, gU, par, par2;
-uniform float uDualPass;
-struct PR { float Dbg; float Df; float c; float foam; float arch; };
-__WATERLINE__
+${FRONT_UNI}
+${FRONT_CONSUME}
+uniform sampler2D uPhoto, uMask;
+uniform vec4 geo, geo2, par, par2, par3;
+struct PR { float Dbg; float foam; float arch; };
 `;
 
   const PRINT_BODY = `
-// figura: cobertura × nucleación (grumos que se juntan, del núcleo al borde), luminancia propia bajo la misma luz
-void fig(vec4 F, float devF, vec2 q, float lightMul, uint sd, float coreW, inout PR r){
-  if (F.r < 0.004 || devF <= 0.) return;
-  float thr = coreW*(1. - F.a) + (1. - coreW)*smoothstep(0.2, 0.8, nucN(q, sd));
-  float nuc = smoothstep(thr - 0.03, thr + 0.03, devF*1.06);
-  float cc = F.r * nuc;
-  if (cc > r.c) {
-    float Lf = F.b * 0.4 * lightMul;
-    r.Df = -0.30103 * log2(max(Lf, 0.02)/LP);
-    r.c = cc;
-  }
-}
-// estallidos de espuma (pororó) que siguen los golpes medidos: celdas que reventan en blanco y se aclaran
-float popFoam(vec2 q, float tO, float idx, float amp, float cellPx){
+// pororó: granos de espuma blandos y redondos (radios de 3 a 14 px), en tres capas de celdas de tamaño y giro distintos, con centros y presencia al azar:
+// nada de rejilla. Cada golpe medido los hace reventar y se relajan en ≈1,7 s.
+float popSoft(vec2 q, float tO, float idx, float amp, float scl){
   float a = uTr - tO;
-  if (a < 0. || a > 1.7 || tO < 0.) return 0.;
-  vec2 cell = floor(q/cellPx);
+  if (a < 0. || a > 1.9 || tO < 0.) return 0.;
   uint id = uint(max(idx, 0.));
-  float h = hashI(ivec2(cell), id*7u + 13u), h2 = hashI(ivec2(cell), id*7u + 17u);
-  if (h > amp) return 0.;
-  float aa = a - h2*0.30; if (aa < 0.) return 0.;
-  vec2 c0 = (cell + 0.2 + 0.6*vec2(hashI(ivec2(cell), id*7u + 19u), hashI(ivec2(cell), id*7u + 23u))) * cellPx;
-  float rad = cellPx*(0.16 + 0.42*(1. - exp(-aa*4.5))) * (0.6 + 0.8*h2);
-  vec2 d = (q - c0) * vec2(1., 1.5);
-  float e = length(d) * (1. + 0.45*(vnI(q*0.09, 31u) - 0.5));
-  float body = 1. - smoothstep(rad*0.5, rad, e);
-  float lace = 0.55 + 0.45*smoothstep(0.35, 0.7, vnI(q*0.18 + vec2(aa*2., 0.), 37u));
-  return body * lace * (1. - smoothstep(0.55, 1.6, aa));
+  float res = 0.;
+  for (int l = 0; l < 3; l++) {
+    float c = scl * (0.52 + 0.46*float(l)*float(l)*0.5 + 0.30*float(l));      // 0,52 · 1,28 · 2,4 (× scl)
+    float ang = 0.55 + 1.9*float(l);
+    vec2 qq = vec2(cos(ang)*q.x - sin(ang)*q.y, sin(ang)*q.x + cos(ang)*q.y);
+    qq += vec2(float(pcg(id*5u + uint(l) + 1u) & 1023u), float(pcg(id*7u + uint(l) + 2u) & 1023u)) * (c/1024.);
+    vec2 cell = floor(qq/c);
+    uint hv = pcg(uint(cell.x + 2048.)*73856093u ^ uint(cell.y + 2048.)*19349663u ^ (id*83492791u + uint(l)*2654435761u));
+    float h = float(hv & 1023u)/1023., h2 = float((hv >> 10u) & 1023u)/1023., h3 = float((hv >> 20u) & 511u)/511.;
+    uint hw = pcg(hv + 977u);
+    float h4 = float(hw & 1023u)/1023., h5 = float((hw >> 10u) & 1023u)/1023.;
+    if (h > amp * (l == 1 ? 1.0 : 0.6)) continue;
+    float aa = a - h2*0.35; if (aa < 0.) continue;
+    vec2 c0 = (cell + 0.22 + 0.56*vec2(h4, h5)) * c;
+    float rad = c * (0.10 + 0.20*h3) * (1. - exp(-aa*4.2)) * (0.9 + 0.3*sin(aa*3. + h*9.));
+    vec2 d = qq - c0;
+    float e = length(d) * (1. + 0.16*sin(atan(d.y, d.x)*3. + h*20.) + 0.08*sin(atan(d.y, d.x)*5. - h3*11.));
+    float body = 1. - smoothstep(rad*0.15, rad, e);
+    res = max(res, body * (1. - smoothstep(0.7, 1.9, aa)) * (0.72 + 0.28*h3));
+  }
+  return res;
 }
 
-PR shade(vec2 p, float dev, float devFig){
-  PR r; r.Dbg = 0.; r.Df = 0.; r.c = 0.; r.foam = 0.; r.arch = 0.;
+PR shade(vec2 p, float dev){
+  PR r; r.Dbg = 0.; r.foam = 0.; r.arch = 0.;
   vec2 q = geo.xy + ((p - geo2.xy)/geo.w + geo2.xy)/geo.z;   // px de la foto original
   vec2 isz = 1. / geo2.zw;
   vec4 M = texture(uMask, vec2(q.x*isz.x, 1. - q.y*isz.y));
@@ -185,14 +204,6 @@ PR shade(vec2 p, float dev, float devFig){
   D = Dt * pow(dev, mix(2.4, 0.55, smoothstep(0.15, 0.9, Dt)));
 #endif
   __POST__
-  // figuras: la plata más densa de la copia, con su sombra pegada a los pies
-  vec2 aq = (q - boxA.xy) / boxA.zw;
-  if (aq.x > 0. && aq.y > 0. && aq.x < 1. && aq.y < 1.) {
-    vec4 F = textureLod(uFigA, vec2(aq.x, 1. - aq.y), 0.);
-    D += F.g * 1.05 * smoothstep(0., 0.6, devFig);
-    fig(F, devFig, q, lightMul, 17u, 0.72, r);
-  }
-__GROUPS__
   r.Dbg = D;
   r.arch *= 1. - dev;
   return r;
@@ -202,18 +213,16 @@ void main(){
   vec2 p = vec2(uv.x * 1080., (1. - uv.y) * 1920.);
   FR f = frontAll(p);
   // durante un relevo cada pase sólo calcula su parte del cuadro: la vieja delante del frente, la nueva detrás
+#if FRONT_ON
   if (uDualPass > 0.5 && uMen2.w > 0.5 && uMen4.x < 0.5) {
     if (uIsOld > 0.5 && f.er > 70.) { o = vec4(0.); return; }
     if (uIsOld < 0.5 && f.er <= 0.) { o = vec4(0.); return; }
   }
-  float dev = f.dev, devFig = f.devFig;
-  if (uIsOld > 0.5) { dev = 1.; devFig = 1.; }
-  PR r = shade(f.pr, dev, devFig);
-#if ARCHIVE
-  o = vec4(r.Dbg, r.Df, r.c, r.arch);
-#else
-  o = vec4(r.Dbg, r.Df, r.c, r.foam);
 #endif
+  float dev = f.dev;
+  if (uIsOld > 0.5) dev = 1.;
+  PR r = shade(f.pr, dev);
+  o = vec4(r.Dbg, r.foam, r.arch, 0.);
 }
 `;
 
@@ -232,13 +241,12 @@ void main(){
     float dR = P.b * 255.;
     float foamP = smoothstep(0.40, 0.85, L0) * water;
     vec4 nz = texture(uNoise, q/vec2(46.,46.) + vec2(uS*0.021, -uS*0.014));
-    float lace = 0.5 + 0.5*sin(6.2832*(dR/26. - uS*0.5) + 5.*nz.g);
-    Ll *= 1. + foamP*live*(0.30*(lace - 0.5) + 0.10*(2.*uLow - 1.));
+    Ll *= 1. + foamP*live*(0.26*(nz.g - 0.5) + 0.10*(2.*uLow - 1.));
     float wv = texture(uNoise, vec2(q.x/70., q.y/26. + uS*0.03)/8.).g - 0.5;
     Ll *= 1. + 0.16*wv*water*live*(1. - foamP);
     // luz de la mañana sobre la sierra
     vec2 lq = (q + vec2(-6.*uT, -2.*uT)) / 300.;
-    float lf = texture(uNoise, lq/8.).r;
+    float lf = textureLod(uNoise, lq/8., 0.).r;
     lightMul = mix(1., 0.92 + 0.16*smoothstep(0.2, 0.8, lf), live);
     Ll *= lightMul;
   }`, post: `` };
@@ -261,7 +269,7 @@ void main(){
     float wv = texture(uNoise, vec2(q.x/210., q.y/16. + uS*0.05)/6.).g - 0.5;
     Ll *= 1. + 0.22*wv*hz*live;
     vec2 lq = (q + vec2(-10.*uT, -3.*uT)) / 700.;
-    float lf = texture(uNoise, lq/8.).r;
+    float lf = textureLod(uNoise, lq/8., 0.).r;
     lightMul = mix(1., 0.94 + 0.12*smoothstep(0.2, 0.8, lf), live);
     Ll *= mix(1., lightMul, 1. - 0.6*skyM);
   }`, post: `` };
@@ -281,7 +289,7 @@ void main(){
     float sp = texture(uNoise, q/vec2(30.,22.) + vec2(uS*0.03, 0.)).g;
     Ll *= 1. + 0.14*(sp - 0.5)*water*live*smoothstep(0.35, 0.75, L0);
     vec2 lq = (q + vec2(-8.*uT, -3.*uT)) / 500.;
-    float lf = texture(uNoise, lq/8.).r;
+    float lf = textureLod(uNoise, lq/8., 0.).r;
     lightMul = mix(1., 0.95 + 0.10*smoothstep(0.2, 0.8, lf), live);
     Ll *= lightMul;
   }`, post: `` };
@@ -301,14 +309,16 @@ void main(){
     vec4 nz = texture(uNoise, q/vec2(52.,40.) + vec2(uS*0.016, -uS*0.03));
     Ll *= 1. + foamP*live*(0.24*(nz.g - 0.5) + 0.20*uSurge);
     // el golpe de la ola: la espuma se abre en encaje y se aclara
-    float ce = cellEdge(vec2(q.x/38., (q.y - 640.)/17. + uS*0.4) + 0.7*vec2(nz.g, nz.a));
-    Ll = mix(Ll, 0.96, uSurge*0.42*(1. - smoothstep(0.05, 0.19, ce))*surf*live*smoothstep(0.35, 0.6, L0));
+    if (surf > 0.01 && uSurge > 0.03) {
+      float ce = cellEdge(vec2(q.x/38., (q.y - 640.)/17. + uS*0.4) + 0.7*vec2(nz.g, nz.a));
+      Ll = mix(Ll, 0.96, uSurge*0.42*(1. - smoothstep(0.05, 0.19, ce))*surf*live*smoothstep(0.35, 0.6, L0));
+    }
     // horizonte
     float hz = smoothstep(516., 545., q.y) * (1. - smoothstep(590., 620., q.y)) * water;
     float wv = texture(uNoise, vec2(q.x/190., q.y/14. + uS*0.05)/6.).g - 0.5;
     Ll *= 1. + 0.20*wv*hz*live;
     vec2 lq = (q + vec2(-9.*uT, -2.*uT)) / 500.;
-    float lf = texture(uNoise, lq/8.).r;
+    float lf = textureLod(uNoise, lq/8., 0.).r;
     lightMul = mix(1., 0.94 + 0.12*smoothstep(0.2, 0.8, lf), live);
     Ll *= mix(1., lightMul, 1. - 0.6*skyM);
   }`, post: `` };
@@ -324,7 +334,7 @@ void main(){
   }`, live: `
   if (live > 0.001) {
     vec2 lq = (q + vec2(-14.*uT, -4.*uT)) / 260.;
-    float lf = texture(uNoise, lq/8.).r;
+    float lf = textureLod(uNoise, lq/8., 0.).r;
     lightMul = mix(1., 0.80 + 0.32*smoothstep(0.2, 0.8, lf), live);
     Ll *= mix(1., lightMul, 1. - 0.5*skyM);
     float gr = smoothstep(430., 560., q.y);
@@ -344,19 +354,20 @@ void main(){
     float wv = texture(uNoise, vec2(q.x/240., q.y/18. + uS*0.04)/6.).g - 0.5;
     float seaM = smoothstep(0.08, 0.45, water);
     Ll *= 1. + 0.16*wv*seaM*live*(1. - smoothstep(0.55, 0.8, L0));
-    Ll *= mix(1., 1. - 0.30*par.y, seaM * live * (1. - smoothstep(0.62, 0.88, L0)));   // el mar se oscurece: la espuma nueva se lee
-    if (g > 0.) {
+    Ll *= mix(1., 1. - 0.16*par.y, seaM * live * (1. - smoothstep(0.62, 0.88, L0)));   // el mar se oscurece: la espuma nueva se lee
+    if (g > 0. && water > 0.2) {
       float dR = P.b * 255.;
-      vec4 nz = texture(uNoise, q/vec2(150., 60.) + vec2(0., uS*0.01));
+      vec2 qw = q + 90.*(texture(uNoise, q/vec2(1100., 800.) + 0.21).ga - 0.5)*2.;   // rompe la periodicidad de la textura de ruido
+      vec4 nz = texture(uNoise, qw/vec2(150., 60.) + vec2(0., uS*0.01));
       float d = dR + 5.*(nz.r - 0.5);
       float pers = mix(0.6, 1., smoothstep(0., 140., d));
-      float reachF = 10. + 130.*g;
+      float reachF = 10. + 120.*g;
       float env = smoothstep(0.5, 3.5, d) * (1. - smoothstep(0.45*reachF, reachF, d + 25.*(nz.g - 0.5)));
-      vec2 lc = vec2(q.x/46. + q.y/70., (d - uS*6.)/(13.*pers)) + 0.8*vec2(nz.g - 0.5, nz.a - 0.5);
+      vec2 lc = vec2(qw.x/46. + qw.y/70., (d - uS*6.)/(13.*pers)) + 0.8*vec2(nz.g - 0.5, nz.a - 0.5);
       float ce = cellEdge(lc);
       float wid = mix(0.08, 0.2, nz.b) * mix(1.4, 0.75, smoothstep(0., 90., d));
       float net = 1. - smoothstep(wid*0.45, wid, ce);
-      vec4 nz2 = texture(uNoise, q/vec2(95., 38.) - vec2(uS*0.012, uS*0.02));
+      vec4 nz2 = texture(uNoise, qw/vec2(95., 38.) - vec2(uS*0.012, uS*0.02));
       float brk = smoothstep(0.22, 0.45, nz2.g);
       float patchF = smoothstep(0.58, 0.8, nz2.b + 0.45*(1. - smoothstep(0., 22., d)) - 0.2*(1. - brk));
       float lace = max(net * brk, patchF * 0.95);
@@ -367,9 +378,12 @@ void main(){
       r.foam = f * (0.92 + 0.08*uHigh);
     }
     vec2 lq = (q + vec2(-10.*uT, -3.*uT)) / 500.;
-    float lf = texture(uNoise, lq/8.).r;
+    float lf = textureLod(uNoise, lq/8., 0.).r;
     lightMul = mix(1., 0.94 + 0.12*smoothstep(0.2, 0.8, lf), live);
     Ll *= mix(1., lightMul, 1. - 0.6*skyM);
+    // el cielo no queda en papel blanco: bruma y celajes suaves que bajan un poco las luces
+    float hz2 = texture(uNoise, vec2(q.x/900. + uS*0.004, q.y/240.)/4.).b;
+    Ll *= 1. - skyM*live*(0.10 + 0.10*smoothstep(0.3, 0.8, hz2) + 0.08*smoothstep(430., 0., q.y));
   }`, post: `` };
 
   // 7 · Portezuelo (rinconada): mar con ondas, resaca sobre la arena, luz que camina (como en Revelado)
@@ -380,7 +394,7 @@ void main(){
   Ll = mix(Ll, mix(0.02 + 0.93*L0, Ll, 0.35), lowB);
   if (live > 0.001) {
     vec2 lq = (q + vec2(-12.*uT, -3.*uT)) / 900.;
-    float lf = texture(uNoise, lq/8.).r;
+    float lf = textureLod(uNoise, lq/8., 0.).r;
     lightMul = mix(1., 0.93 + 0.14*smoothstep(0.2, 0.8, lf), live);
     Ll *= mix(1., lightMul, 1. - 0.6*skyM);
     if (water > 0.01) {
@@ -417,7 +431,7 @@ void main(){
   KINDS.gruta = { id: 8, warp: ``, live: `
   if (live > 0.001) {
     vec2 lq = (q + vec2(-12.*uT, -3.*uT)) / 900.;
-    float lf = texture(uNoise, lq/8.).r;
+    float lf = textureLod(uNoise, lq/8., 0.).r;
     lightMul = mix(1., 0.93 + 0.14*smoothstep(0.2, 0.8, lf), live);
     Ll *= lightMul;
     Ll *= 1. - 0.55*skyM*(1. - smoothstep(0.14, 0.5, Ll))*(0.94 + 0.06*sin(uT*1.1));
@@ -429,14 +443,14 @@ void main(){
       float sd = q.y - yf;
       float sheet = smoothstep(-1., 3., sd);
       float lacy = smoothstep(0.3, 0.7, texture(uNoise, vec2(q.x/55., q.y/14.)).b);
-      float edge = exp(-pow((sd - 3.)/3.6, 2.)) * (0.6 + 0.4*lacy);
+      float edge = exp(-pow((sd - 5.)/10., 2.)) * (0.5 + 0.5*lacy);
       float gloss = sheet * exp(-max(sd - 6., 0.)/55.);
       float trail = smoothstep(-80., 0., sd) * (1. - sheet) * smoothstep(-0.2, 0.6, -cos(gp));
       float Lg = Ll;
       Lg *= 1. - 0.30*gloss - 0.10*sheet;
       Lg += 0.06*sheet*smoothstep(0.45, 0.8, texture(uNoise, vec2(q.x/120. + gp*0.05, q.y/25.)).g);
       Lg *= 1. - 0.14*trail;
-      Lg = mix(Lg, 0.95, edge*0.92*step(8., reach));
+      Lg = mix(Lg, 0.80, edge*0.5*step(8., reach));
       Ll = mix(Ll, Lg, sand * live);
     }
     float dS = P.g * 255. * 2.;
@@ -452,11 +466,15 @@ void main(){
       float c = pow(1. - abs(s)/3., 3.);
       Ll *= 1. + 0.12 * (2.*c - 0.6) * (0.6 + 0.4*uHigh) * cw * live;
     }
-    // pororó: el maíz revienta en blanco, la espuma estalla en la boca con cada golpe medido
+    // pororó: el maíz revienta en blanco: granos de espuma blandos en la boca (franja oscuro→claro), nunca sobre la arena
     {
-      float zone = smoothstep(1330., 1420., q.y) * (1. - smoothstep(1700., 1745., q.y)) * smoothstep(1180., 1330., q.x) * (1. - smoothstep(2020., 2120., q.x));
-      float pf = max(popFoam(q, uOn.x, uOn.y, par.x, 46.), popFoam(q, uOn.z, uOn.w, par.x, 46.));
-      r.foam = max(r.foam, pf * zone * live);
+      float band = smoothstep(0.06, 0.45, skyM) * (1. - smoothstep(0.55, 0.96, skyM));
+      float zone = band * smoothstep(1150., 1350., q.y) * (1. - smoothstep(1500., 1620., q.y));
+      if (zone > 0.001) {
+        float pf = popSoft(q, uOn.x, uOn.y, par.x, 34.);
+        if (uTr - uOn.z < 1.9) pf = max(pf, popSoft(q, uOn.z, uOn.w, par.x, 34.));
+        r.foam = max(r.foam, pf * zone * live * 0.85);
+      }
     }
   }`, post: `` };
 
@@ -483,7 +501,7 @@ void main(){
       Ll = mix(Ll, 0.90, water*live*(0.18 + 0.52*st));
     }
     vec2 lq = (q + vec2(-9.*uT, -3.*uT)) / 600.;
-    float lf = texture(uNoise, lq/8.).r;
+    float lf = textureLod(uNoise, lq/8., 0.).r;
     lightMul = mix(1., 0.94 + 0.12*smoothstep(0.2, 0.8, lf), live);
     Ll *= lightMul;
   }`, post: `` };
@@ -491,13 +509,17 @@ void main(){
   // 10 · playa con pastos: los pastos se mecen con el viento, el mar gris respira; la plata se vuelve arena
   KINDS.playa = { id: 10, warp: `
   if (live > 0.) {
-    // pastos: la punta se mueve más que la base (base y altura de cada mata en par/par2)
+    // pastos: la punta se mueve más que la base (base y altura de cada mata en par/par2); sólo se mueven los píxeles oscuros de la mata
     for (int ti = 0; ti < 2; ti++) {
       vec4 tf = ti == 0 ? par : par2;      // x base, y base, alto, ancho medio
       float hgt = clamp((tf.y - q.y)/tf.z, 0., 1.);
-      float wx = 1. - smoothstep(tf.w*0.6, tf.w*1.3, abs(q.x - tf.x - hgt*0.35*tf.z*0.5));
-      float ph = uS*0.9 + q.x*0.012 + q.y*0.006;
-      q2.x += live * wx * hgt*hgt * (9.*sin(ph) + 4.*sin(ph*2.3 + 1.7)) * (0.6 + 0.8*uLow);
+      float bx = abs(q.x - tf.x - hgt*tf.z*0.45);
+      if (hgt > 0.01 && bx < tf.w*1.3) {
+        float dk = 1. - smoothstep(0.22, 0.5, texture(uPhoto, vec2(q.x*isz.x, 1. - q.y*isz.y)).r);
+        float wx = (1. - smoothstep(tf.w*0.6, tf.w*1.3, bx)) * dk;
+        float ph = uS*0.9 + q.x*0.012 + q.y*0.006;
+        q2.x += live * wx * hgt*hgt * (9.*sin(ph) + 4.*sin(ph*2.3 + 1.7)) * (0.6 + 0.8*uLow);
+      }
     }
     if (water > 0.01) {
       float hh = max(q.y - 806., 1.);
@@ -507,7 +529,7 @@ void main(){
   }`, live: `
   if (live > 0.001) {
     vec2 lq = (q + vec2(-10.*uT, -2.*uT)) / 800.;
-    float lf = texture(uNoise, lq/8.).r;
+    float lf = textureLod(uNoise, lq/8., 0.).r;
     lightMul = mix(1., 0.94 + 0.12*smoothstep(0.2, 0.8, lf), live);
     Ll *= mix(1., lightMul, 1. - 0.6*skyM);
     if (water > 0.01) {
@@ -520,6 +542,112 @@ void main(){
     float sv = texture(uNoise, vec2((q.x - 42.*uT)/330., q.y/28.)/6.).g - 0.5;
     float sv2 = texture(uNoise, vec2((q.x - 70.*uT)/150., q.y/12.)/6.).a - 0.5;
     Ll *= 1. + (0.09*sv + 0.06*sv2)*sand*live*smoothstep(900., 1000., q.y);
+    // la plata de las matas se deshace en arena (par3.x = avance 0..1): la mata pierde masa a granos hasta parecerse a la arena de al lado
+    if (par3.x > 0.001) {
+      float tw_ = 0.;
+      for (int ti = 0; ti < 2; ti++) {
+        vec4 tf = ti == 0 ? par : par2;
+        float hg = clamp((tf.y - q.y)/tf.z, 0., 1.);
+        float bx = abs(q.x - tf.x - hg*tf.z*0.45);
+        tw_ = max(tw_, step(0.01, hg) * (1. - smoothstep(tf.w*0.8, tf.w*1.5, bx)));
+      }
+      float dk2 = 1. - smoothstep(0.22, 0.55, L0);
+      float th2 = 0.15 + 0.7*texture(uNoise, q/vec2(19., 19.)/6.).g + 0.15*hashI(ivec2(q*0.5), 33u);
+      float gone = smoothstep(th2 - 0.05, th2 + 0.05, par3.x*(0.6 + 0.6*max(hgRel(par, q), hgRel(par2, q))));
+      float Ls = texture(uPhoto, vec2((880. + 40.*hashI(ivec2(q*0.3), 35u))*isz.x, 1. - (1420. + 30.*hashI(ivec2(q*0.3), 36u))*isz.y)).a;
+      Ll = mix(Ll, Ls*0.97, tw_*dk2*gone*0.9);
+    }
+  }`, post: `` };
+
+  // ---------- placas propias (SPEC §9): las máscaras vienen de la generación (R agua, G roca, A cielo) ----------
+  const SKYDRIFT = `
+    float skyW = smoothstep(0.9, 1.0, skyM);
+    q2.x += skyW * live * 9.*sin(uS*0.07);`;
+  // 11 · quebrada: bruma de valle que corre, monte que se mece, brillo del arroyo, sombras de nubes
+  KINDS.quebrada = { id: 11, warp: `
+  if (live > 0.) {${SKYDRIFT}
+    float ld = (1. - skyM) * (1. - water);
+    vec2 fl = vec2(texture(uNoise, q/vec2(120.,90.) + vec2(uS*0.010, 0.)).g, texture(uNoise, q/vec2(100.,80.) + vec2(0.37, -uS*0.008)).a) - 0.5;
+    q2 += fl * 2.2 * ld * live * (0.6 + 0.8*uLow) * smoothstep(760., 1000., q.y);
+    q2 += fl * 4. * water * live;
+  }`, live: `
+  if (live > 0.001) {
+    float band = smoothstep(700., 830., q.y) * (1. - smoothstep(1050., 1400., q.y));
+    vec2 mq = q/vec2(700., 240.) + vec2(uT*0.006, -uT*0.0025);
+    float mb = texture(uNoise, mq/6.).b*0.6 + texture(uNoise, mq*2.1/6. + 0.3).r*0.4;
+    float mist = smoothstep(0.50, 0.80, mb) * band * (1. - skyM);
+    Ll = mix(Ll, 0.60, mist*0.42*live);
+    float sp = texture(uNoise, q/vec2(26.,14.) + vec2(uS*0.03, uS*0.05)).g;
+    Ll *= 1. + 0.32*(sp - 0.5)*water*live;
+    vec2 lq = (q + vec2(-12.*uT, -4.*uT)) / 520.;
+    float lf = textureLod(uNoise, lq/8., 0.).r;
+    lightMul = mix(1., 0.84 + 0.30*smoothstep(0.2, 0.8, lf), live);
+    Ll *= mix(1., lightMul, 1. - 0.5*skyM);
+  }`, post: `` };
+
+  // 12 · tacuarí: el río corre lento con su reflejo, cañas que se mecen, nubes que pasan
+  KINDS.tacuari = { id: 12, warp: `
+  if (live > 0.) {${SKYDRIFT}
+    if (water > 0.01) {
+      q2.x += 3.2*sin(q.y*0.045 + uS*1.1)*water*live*(0.6 + 0.8*uLow);
+      q2.y += 1.4*sin(q.x*0.017 - uS*0.7)*water*live;
+    }
+    float dk = 1. - smoothstep(0.10, 0.28, texture(uPhoto, vec2(q.x*isz.x, 1. - q.y*isz.y)).r);
+    float rm = clamp(smoothstep(900., 1150., q.x) + (1. - smoothstep(60., 220., q.x))*smoothstep(1500., 1700., q.y), 0., 1.);
+    float hg = clamp((1960. - q.y)/1000., 0., 1.);
+    float ph = uS*0.9 + q.x*0.012 + q.y*0.006;
+    q2.x += live*dk*rm*hg*hg*(9.*sin(ph) + 4.*sin(ph*2.3 + 1.7))*(0.6 + 0.8*uLow);
+  }`, live: `
+  if (live > 0.001) {
+    float sp = texture(uNoise, q/vec2(60.,22.) + vec2(uS*0.02, uS*0.03)).g;
+    Ll *= 1. + 0.12*(sp - 0.5)*water*live;
+    vec2 lq = (q + vec2(-10.*uT, -3.*uT)) / 700.;
+    float lf = textureLod(uNoise, lq/8., 0.).r;
+    lightMul = mix(1., 0.90 + 0.18*smoothstep(0.2, 0.8, lf), live);
+    Ll *= mix(1., lightMul, 1. - 0.6*skyM);
+  }`, post: `` };
+
+  // 13 · cerrito: el pastizal ondula con el viento, sombras de nubes cruzan la llanura, la laguna brilla
+  KINDS.cerrito = { id: 13, warp: `
+  if (live > 0.) {${SKYDRIFT}
+    float gr = smoothstep(940., 1150., q.y) * (1. - water) * (1. - skyM);
+    float w1 = texture(uNoise, vec2(q.x/210. + uS*0.03, q.y/80.)/4.).g - 0.5;
+    float w2 = texture(uNoise, vec2(q.x/80. - uS*0.05, q.y/36.)/4.).a - 0.5;
+    q2.x += (2.6*w1 + 1.4*w2) * gr * live * (0.6 + 0.8*uLow) * (0.3 + 0.7*smoothstep(940., 1700., q.y));
+    q2.y += 0.5*w2*gr*live;
+    if (water > 0.01) q2.x += 2.*sin(q.y*0.3 + uS*1.3)*water*live;
+  }`, live: `
+  if (live > 0.001) {
+    vec2 lq = (q + vec2(-18.*uT, -5.*uT)) / 420.;
+    float lf = textureLod(uNoise, lq/8., 0.).r;
+    lightMul = mix(1., 0.86 + 0.26*smoothstep(0.2, 0.8, lf), live);
+    Ll *= mix(1., lightMul, (1. - skyM)*0.9);
+    float sp = texture(uNoise, q/vec2(40.,8.) + vec2(uS*0.03, uS*0.05)).g;
+    Ll *= 1. + 0.14*(sp - 0.5)*water*live;
+  }`, post: `` };
+
+  // 14 · carapé: cumbre de pastizal con crestones de granito; el pororó revienta en granos blancos sobre la roca; sombras de nubes
+  KINDS.carape = { id: 14, warp: `
+  if (live > 0.) {${SKYDRIFT}
+    float gr = smoothstep(1060., 1250., q.y) * (1. - rock) * (1. - skyM);
+    float w1 = texture(uNoise, vec2(q.x/190. + uS*0.03, q.y/90.)/4.).g - 0.5;
+    float w2 = texture(uNoise, vec2(q.x/70. - uS*0.05, q.y/40.)/4.).a - 0.5;
+    q2.x += (2.8*w1 + 1.5*w2) * gr * live * (0.6 + 0.8*uLow) * (0.3 + 0.7*smoothstep(1060., 1700., q.y));
+  }`, live: `
+  if (live > 0.001) {
+    vec2 lq = (q + vec2(-16.*uT, -5.*uT)) / 380.;
+    float lf = textureLod(uNoise, lq/8., 0.).r;
+    lightMul = mix(1., 0.88 + 0.22*smoothstep(0.2, 0.8, lf), live);
+    Ll *= mix(1., lightMul, (1. - skyM)*0.9);
+    if (par.x > 0. && uTr > par.y && uTr < par.z) {
+      float gate = smoothstep(par.y, par.y + 0.5, uTr) * (1. - smoothstep(par.z - 0.8, par.z, uTr));
+      float zone = smoothstep(0.3, 0.75, rock) * (1. - smoothstep(1090., 1180., q.y));
+      if (zone > 0.001) {
+        float pf = popSoft(q, uOn.x, uOn.y, par.x, 36.);
+        if (uTr - uOn.z < 1.9) pf = max(pf, popSoft(q, uOn.z, uOn.w, par.x, 36.));
+        r.foam = max(r.foam, pf * zone * gate * live * 0.8);
+      }
+    }
   }`, post: `` };
 
   RV.KINDS = KINDS;
@@ -532,93 +660,150 @@ void main(){
   }
 
 
-  // bloque de un grupo de figuras (desenrollado: sólo se compilan los grupos que existen en la copia)
-  function groupBlock(i) {
-    const n = i + 1, c = 'xyzw'[i];
-    return `
-    {
-      vec2 qq = q - go${n}.xy;
-      if (qq.x > gb${n}.x && qq.y > gb${n}.y && qq.x < gb${n}.z && qq.y < gb${n}.w) {
-        vec2 bq = (qq - boxB.xy) / boxB.zw;
-        if (bq.x > 0. && bq.y > 0. && bq.x < 1. && bq.y < 1.) {
-          vec4 F = textureLod(uFigB, vec2(bq.x, 1. - bq.y), 0.);
-          float devF = grp.${c} * step(0.15, devFig);
-          D += F.g * 1.05 * smoothstep(0., 0.6, devF);
-          fig(F, devF, qq, lightMul, 29u, gcw.${c}, r);
-        }
-      }
-    }`;
-  }
   // o: {kind, archive, groups: [ids 1..4 presentes]}
   RV.printSource = function (o) {
     const K = KINDS[o.kind];
-    const defs = `#define KIND ${K.id}\n#define ARCHIVE ${o.archive ? 1 : 0}\n`;
-    const groups = (o.groups || []).length ? `  if (q.x > gU.x && q.y > gU.y && q.x < gU.z && q.y < gU.w) {${o.groups.map((g) => groupBlock(g - 1)).join('')}\n  }` : '';
-    const body = PRINT_BODY.replace('__WARP__', K.warp || '').replace('__LIVE__', K.live || '').replace('__POST__', K.post || '').replace('__GROUPS__', groups);
+    const defs = `#define KIND ${K.id}\n#define ARCHIVE ${o.archive ? 1 : 0}\n#define FRONT_ON ${o.front ? 1 : 0}\n#define RINSE_ON ${o.rinse ? 1 : 0}\n`;
+    const body = PRINT_BODY.replace('__WARP__', K.warp || '').replace('__LIVE__', K.live || '').replace('__POST__', K.post || '');
     return PRINT_HEAD.replace('__DEFINES__', defs).replace('__WATERLINE__', '') + body;
   };
 
-  // ---------- pase de composición ----------
-  RV.compositeSource = function () {
+
+  // ---------- pase de figuras: sólo se dibuja sobre el recuadro de cada grupo (tijera), no sobre todo el cuadro ----------
+  RV.figSource = function (o) {
     return `#version 300 es
+#define FRONT_ON ${o.front ? 1 : 0}
+#define RINSE_ON ${o.rinse ? 1 : 0}
 precision highp float;
 precision highp int;
 precision highp sampler2D;
 in vec2 uv; out vec4 o;
 ${COMMON}
-${FRONT}
-uniform float uT, uFrame, uSurge, uDual, uBArch, uSink, uRms, uSelB, uSelA;
-uniform sampler2D uGrain, uPB, uPA;
-uniform vec2 uGOff;
-uniform vec4 uBurn, uBurn2;     // progreso, yFull, yZero, densidad | fase del borde, amplitud del borde, pluma
+uniform float uT, uIsOld, uDualPass;
+${FRONT_UNI}
+${FRONT_CONSUME}
+uniform sampler2D uFig;
+uniform vec4 geo, geo2, uBox, uGb, uGo;   // cámara | caja del atlas y del grupo (px de foto) y desplazamiento del grupo
+uniform float uDevG, uCW, uSeed, uGrpSet;
+// figura: cobertura × nucleación (grumos que se juntan, del núcleo al borde), luminancia propia bajo la misma luz
 void main(){
   vec2 p = vec2(uv.x * 1080., (1. - uv.y) * 1920.);
   FR f = frontAll(p);
+#if FRONT_ON
+  if (uDualPass > 0.5 && uMen2.w > 0.5 && uMen4.x < 0.5) {
+    if (uIsOld > 0.5 && f.er > 70.) { o = vec4(0.); return; }
+    if (uIsOld < 0.5 && f.er <= 0.) { o = vec4(0.); return; }
+  }
+#endif
+  float devFig = uIsOld > 0.5 ? 1. : f.devFig;
+  vec2 q = geo.xy + ((f.pr - geo2.xy)/geo.w + geo2.xy)/geo.z;   // px de la foto original
+  float devF = devFig;
+  if (uGrpSet > 0.5) {
+    q -= uGo.xy;
+    if (q.x < uGb.x || q.y < uGb.y || q.x > uGb.z || q.y > uGb.w) { o = vec4(0.); return; }
+    devF = uDevG * step(0.15, devFig);
+  }
+  vec2 bq = (q - uBox.xy) / uBox.zw;
+  if (bq.x <= 0. || bq.y <= 0. || bq.x >= 1. || bq.y >= 1. || devF <= 0.) { o = vec4(0.); return; }
+  vec4 F = textureLod(uFig, vec2(bq.x, 1. - bq.y), 0.);
+  float sh = F.g * 1.05 * smoothstep(0., 0.6, devF);
+  float Df = 0., c = 0.;
+  if (F.r >= 0.004) {
+    float lm = 0.94 + 0.12*smoothstep(0.2, 0.8, texture(uNoise, ((q + vec2(-12.*uT, -3.*uT))/900.)/8.).r);
+    uint sd = uint(uSeed);
+    float thr = uCW*(1. - F.a) + (1. - uCW)*smoothstep(0.2, 0.8, nucN(q, sd));
+    float nuc = smoothstep(thr - 0.03, thr + 0.03, devF*1.06);
+    c = F.r * nuc;
+    if (c > 0.) Df = -0.30103 * log2(max(F.b * 0.4 * lm, 0.02)/LP);
+  }
+  o = vec4(sh, Df, c, 0.);
+}
+`;
+  };
+
+  // ---------- pase de composición ----------
+  // o: {front: hay frente o revelado en curso, dual: relevo con copia vieja, burn: cielo quemado}
+  RV.compositeSource = function (o) {
+    return `#version 300 es
+#define FRONT_ON ${o.front ? 1 : 0}
+#define RINSE_ON 0
+#define CDUAL ${o.dual ? 1 : 0}
+#define CBURN ${o.burn ? 1 : 0}
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+in vec2 uv; out vec4 o;
+${COMMON}
+${FRONT_UNI}
+${FRONT_CONSUME}
+uniform float uT, uFrame, uSurge, uDual, uBArch, uSink, uRms, uSelB, uSelA, uHasFA, uHasFB;
+uniform sampler2D uGrain, uPB, uPA, uFA, uFB;
+uniform vec4 uRA0, uRA1, uRA2, uRA3, uRA4, uRB0, uRB1, uRB2, uRB3, uRB4;   // rectángulos de pantalla donde hay figuras (x0, y0, x1, y1)
+#define INR(r) (p.x > r.x && p.y > r.y && p.x < r.z && p.y < r.w)
+uniform vec2 uGOff;
+uniform vec4 uBurn, uBurn2;     // progreso, yFull, yZero, densidad | fase del borde, amplitud del borde, pluma
+uniform vec4 uNote;             // quemado local bajo una anotación: y0, y1, densidad, pluma
+void main(){
+  vec2 p = vec2(uv.x * 1080., (1. - uv.y) * 1920.);
+#if FRONT_ON
+  FR f = frontAll(p);
   float er = f.er, perp = f.perp, dev = f.dev;
   if (uMen2.w < 0.5 && uDevAll < 0.) er = 1e5;
+#else
+  float er = 1e5, perp = 0., dev = 1.;
+#endif
   ivec2 ip = ivec2(gl_FragCoord.xy);
   vec4 gt = texelFetch(uGrain, (ivec2(p) + ivec2(uGOff)) & 1023, 0);
   vec4 B = texelFetch(uPB, ip, 0);
-  float Dbg = B.r, Df = B.g, figC = B.b, foam = uBArch > 0.5 ? 0. : B.a, arch = uBArch > 0.5 ? B.a : 0.;
+  vec4 FB = INR(uRB0) ? texelFetch(uFB, ip, 0) : vec4(0.);
+  float Dbg = B.r + FB.r, Df = FB.g, figC = FB.b, foam = B.g, arch = B.b;
   float selw = uSelB;
-  if (uDual > 0.5) {
+#if CDUAL
+  if (uMen4.x > 0.5) {
+    // laboratorio: la vieja se sumerge (densidad → papel mojado) y la nueva sube desde el blanco
     vec4 A = texelFetch(uPA, ip, 0);
-    if (uMen4.x > 0.5) {
-      // laboratorio: la vieja se sumerge (densidad → papel mojado) y la nueva sube desde el blanco
-      float keep = step(nucN(p, 41u), 1. - uSink);
-      selw = mix(uSelA, uSelB, step(0.99, uSink));
-      Dbg = Dbg + A.r * (1. - uSink);
-      float cA = A.b * keep;
-      float D0 = mix(Dbg, mix(Df, A.g, cA), max(figC, cA));
-      Dbg = D0; Df = D0; figC = max(figC, cA); foam = max(foam, A.a * (1. - uSink));
-    } else {
-      // relevo llevado por el frente: delante sólo la copia vieja; en la banda de lavado se disuelve; detrás sólo la nueva
-      float wA = 1. - smoothstep(0., 64., er);
+    vec4 FA = INR(uRA0) ? texelFetch(uFA, ip, 0) : vec4(0.);
+    float keep = FA.b > 0. ? step(nucN(p, 41u), 1. - uSink) : 0.;
+    selw = mix(uSelA, uSelB, step(0.99, uSink));
+    Dbg = Dbg + (A.r + FA.r) * (1. - uSink);
+    float cA = FA.b * keep;
+    float D0 = mix(Dbg, mix(Df, FA.g, cA), max(figC, cA));
+    Dbg = D0; Df = D0; figC = max(figC, cA); foam = max(foam, A.g * (1. - uSink));
+  } else {
+    // relevo llevado por el frente: delante sólo la copia vieja; en la banda de lavado se disuelve; detrás sólo la nueva
+    float wA = 1. - smoothstep(0., 64., er);
+    selw = mix(uSelB, uSelA, wA);
+    float cB = figC;
+    if (er <= 0.) { Dbg = 0.; Df = 0.; cB = 0.; foam = 0.; arch = 0.; }
+    float cA = 0., DfA = 0.;
+    if (wA > 0.) {
+      vec4 A = texelFetch(uPA, ip, 0);
+      vec4 FA = INR(uRA0) ? texelFetch(uFA, ip, 0) : vec4(0.);
       float wF = 1. - smoothstep(0., 70., er);
-      selw = mix(uSelB, uSelA, wA);
-      float cB = figC;
-      if (er <= 0.) { Dbg = 0.; Df = 0.; cB = 0.; foam = 0.; arch = 0.; }
-      float cA = 0., DfA = 0.;
-      if (wA > 0.) {
-        float keep = step(nucN(p, 41u), wF);      // cada grano de la figura vieja está entero o ya no está
-        Dbg = min(Dbg + A.r * wA, 2.2);
-        cA = A.b * keep; DfA = A.g;
-        foam = max(foam, A.a * wA);
-      }
-      float Dm = mix(Dbg, Df, cB);
-      Dm = mix(Dm, DfA, cA);
-      figC = max(cB, cA);
-      Dbg = Dm; Df = Dm;
+      float keep = FA.b > 0. ? step(nucN(p, 41u), wF) : 0.;      // cada grano de la figura vieja está entero o ya no está
+      Dbg = min(Dbg + (A.r + FA.r) * wA, 2.2);
+      cA = FA.b * keep; DfA = FA.g;
+      foam = max(foam, A.g * wA);
     }
+    float Dm = mix(Dbg, Df, cB);
+    Dm = mix(Dm, DfA, cA);
+    figC = max(cB, cA);
+    Dbg = Dm; Df = Dm;
   }
+#endif
   float D = mix(Dbg, Df, figC);
+#if FRONT_ON
   float archAmt = (uBArch > 0.5 && uDevAll < 0.) ? (1. - dev) : 0.;
+#else
+  float archAmt = 0.;
+#endif
   D *= 1. + 0.04*(2.*uRms - 1.) + uRinse.w;
   // bordes quemados a mano en la copia viva (viñeta suave de ampliadora)
   { vec2 vq = (p - vec2(540., 1000.)) / vec2(620., 1050.); D += 0.065 * smoothstep(0.7, 1.4, dot(vq, vq)) * (1. - archAmt); }
   float L = LP * exp2(-3.321928 * D);
   L = mix(L, 0.955, foam * (1. - figC));
   // quemado del cielo: tarjeta sostenida a mano, borde ancho y ondulado que deriva despacio
+#if CBURN
   if (uBurn.x > 0.) {
     float yc = mix(-420., uBurn.y, uBurn.x);
     float nb1 = texture(uNoise, vec2(p.x/2200. + uBurn2.x, 0.83)).b - 0.5;
@@ -627,8 +812,17 @@ void main(){
     float bd = uBurn.w * (1. - smoothstep(yc, yc + uBurn2.z, p.y + wave));
     L *= exp2(-3.321928 * bd);
   }
+#endif
+  // quemado local bajo la anotación (tarjeta de ampliadora): banda ancha de borde blando y ondulado
+  if (uNote.z > 0.001) {
+    float wv = 14.*sin(p.x/151. + uNote.x*0.01) + 9.*sin(p.x/67. + 1.3);
+    float nb = uNote.z * smoothstep(uNote.x - uNote.w, uNote.x, p.y + wv) * (1. - smoothstep(uNote.y, uNote.y + uNote.w, p.y + wv));
+    L *= exp2(-3.321928 * nb);
+  }
   // la emulsión mojada que todavía no reveló es gris lechosa, no papel blanco (sólo fuera de las figuras)
+#if FRONT_ON
   if (uDevAll < 0. && er > 0. && er < 1e4) L *= 1. - 0.08*(1. - dev)*(1. - figC)*smoothstep(0., 160., er);
+#endif
   // grano: vivo fino, archivo grueso, figuras en grumos densos de plata
   float g1 = gt.r - 0.5, g2 = gt.g - 0.5, gA = gt.b - 0.5, gF = gt.a - 0.5;
   float mid = max(clamp(4. * L * (1. - L), 0.15, 1.), 0.5*figC);
@@ -638,14 +832,15 @@ void main(){
   L = clamp(L + grain * mid, 0., 1.);
   // menisco: labio oscuro delante, cresta especular quebrada con cuerpo, valle capilar, ondas que siguen, banda mojada
   float spec = 0.;
+#if FRONT_ON
   if (uMen2.w > 0.5 && uMen4.x < 0.5 && er > -3. && er < 240.) {
     float nb = texture(uNoise, vec2(perp/3840. + uMen2.z, uTr*0.02 + 0.5)).a;
     float nb2 = texture(uNoise, vec2(perp/1300. + 1.3*uMen2.z, 0.37)).g;
     float thick = 3. + 3.*nb2;
-    float brk = smoothstep(0.44, 0.6, nb);
+    float brk = 0.35 + 0.65*smoothstep(0.36, 0.66, nb);
     if (er < 0.) L *= 1. - (0.08 + 0.1*brk)*smoothstep(-2.6, -0.8, er);
     float crest = smoothstep(-0.2, 0.9, er) * (1. - smoothstep(thick - 1.2, thick + 0.6, er));
-    spec = crest * brk * min(1., 0.72 + 0.28*uSurge);
+    spec = crest * brk * 0.85 * min(1., 0.72 + 0.28*uSurge);
     float trough = smoothstep(thick, thick + 1.5, er) * (1. - smoothstep(thick + 5., thick + 8., er));
     float r1 = er - (34. + 7.*nb2), r2 = er - (68. + 12.*nb2);
     float rip = 0.065*exp(-r1*r1/3.) - 0.045*exp(-(r1 - 3.2)*(r1 - 3.2)/4.) + 0.04*exp(-r2*r2/4.) - 0.03*exp(-(r2 - 3.4)*(r2 - 3.4)/5.);
@@ -656,9 +851,11 @@ void main(){
     L *= (1. - (0.05 + 0.1*brk)*trough) * (1. + rip*step(0., er));
     L = (L + (L - 0.5)*0.14*wb*midL) * (1. - 0.07*wb) + gl;
   }
+#endif
   vec3 col = toneColor(clamp(L, 0., 1.), archAmt);
   if (selw > 0.001) col = mix(col, toneSel(clamp(L, 0., 1.)), selw);
   // plateado: brillo frío en las zonas densas junto a los bordes (sólo archivo)
+#if FRONT_ON
   if (archAmt > 0.) {
     vec2 e2 = min(p, vec2(1080., 1920.) - p);
     float edgeF = 1. - smoothstep(0., 220., min(e2.x, e2.y));
@@ -666,6 +863,7 @@ void main(){
     col = mix(col, vec3(L*1.06)*vec3(0.96, 0.99, 1.04), 0.6*edgeF*dens*archAmt);
     col = mix(col, col * vec3(1.02, 0.93, 0.8), 0.7*arch);
   }
+#endif
   col = mix(col, vec3(0.985, 0.965, 0.93), spec*0.8);
   o = vec4(col, 1.);
 }
