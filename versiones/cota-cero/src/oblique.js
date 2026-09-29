@@ -8,7 +8,8 @@
   OB.camera = function (cfg) {
     const o = cfg.views.oblique, [cx, cy, cz] = o.cam, tip = cfg.world.tip;
     const aTip = Math.atan2(tip[1] - cy, tip[0] - cx);
-    const a = aTip + (o.yawOffsetDeg * Math.PI) / 180;
+    // guiñada: la punta cae en x = tipX (x = 540 + f·tan(a − aTip))
+    const a = aTip + Math.atan((o.tipX - 540) / o.focal);
     const Fw = [Math.cos(a), Math.sin(a)], R = [Fw[1], -Fw[0]];
     const f = o.focal, ybh = o.bufHorizon, k = o.k;
     return {
@@ -19,12 +20,12 @@
       ground(xb, yb) { const d = (f * cz) / (yb - ybh), l = ((xb - 540) * d) / f; return [cx + Fw[0] * d + R[0] * l, cy + Fw[1] * d + R[1] * l, d]; },
     };
   };
-  // horizonte en pantalla en el tiempo t: casi lineal con arranque y final suaves (≥ 0,4 px/cuadro en el tramo central)
+  // horizonte en pantalla: quieto hasta el primer punto clave y luego lineal (≥ 0,4 px/cuadro), con arranque y final muy cortos
   OB.horizonAt = function (cfg, t) {
-    const [[t0, y0], [t1, y1]] = cfg.views.oblique.horizon;
-    const u = PBS.clamp((t - t0) / (t1 - t0), 0, 1), e = 0.06;
+    const o = cfg.views.oblique, [[t0, y0], [t1, y1]] = o.horizon;
+    const u = PBS.clamp((t - t0) / (t1 - t0), 0, 1), e = o.horizonEase;
     let s;
-    if (u < e) s = (u * u) / (2 * e); else if (u > 1 - e) s = 1 - ((1 - u) * (1 - u)) / (2 * e); else s = u - e / 2;
+    if (u < e) s = (u * u) / (2 * e); else if (u > 1 - e) s = 1 - e - ((1 - u) * (1 - u)) / (2 * e); else s = u - e / 2;
     s /= 1 - e;
     return y0 + (y1 - y0) * PBS.clamp(s, 0, 1);
   };
@@ -52,16 +53,37 @@ in vec4 v; out vec4 o;
 void main(){ o = v; }`;
 
   // Grabado estático de la tierra: R tinta granito, G tinta pasto, B ocre (sendero), A máscara de tierra
+  // Paredes empinadas: trazos de fractura a lo largo de la línea de máxima pendiente (como en la gruta), cruzados a 60° en lo más hondo.
+  // Cumbre y pasto suave: curvas de nivel cada 3 m, una sola línea. Grutas: cuñas oscuras irregulares al pie del acantilado.
   function landFS(cfg) {
     const tr = cfg.world.trail;
     const segs = tr.slice(0, -1).map((p, i) => `seg(w, vec2(${p[0].toFixed(1)},${p[1].toFixed(1)}), vec2(${tr[i + 1][0].toFixed(1)},${tr[i + 1][1].toFixed(1)}), acc, best, bs); acc += ${Math.hypot(tr[i + 1][0] - p[0], tr[i + 1][1] - p[1]).toFixed(1)};`).join('\n  ');
-    const notches = cfg.world.notches.map((q) => `notch = max(notch, exp(-pow((w.y - ${q.y.toFixed(1)})/${(q.w * 0.9).toFixed(1)}, 2.)));`).join('\n  ');
+    // grutas: (y centro, semiancho m, alto m) — anchos y alturas desparejos; dos juntas forman una hendidura
+    const N = [[176, 7, 6.5], [318, 12.5, 9.5], [343, 6, 5.5], [527, 9, 7.8], [772, 15, 8.8]];
+    const notches = N.map((q, i) => `nw(w, h, ${q[0].toFixed(1)}, ${q[1].toFixed(1)}, ${q[2].toFixed(1)}, ${(i * 3.7).toFixed(1)}, nC);`).join('\n  ');
     return window.CC_SH.common + `
 uniform sampler2D gb, bake; uniform vec4 ext; uniform vec2 texel; uniform float k, BH;
-uniform vec3 sunD;
+uniform vec3 sunD; uniform vec2 C, Fw, Rv; uniform float f, cz, ybh;
 void seg(vec2 p, vec2 a, vec2 b, float acc, inout float best, inout float bs){
   vec2 ab = b - a; float L = length(ab); float t = clamp(dot(p - a, ab)/(L*L), 0., 1.); float d = length(p - a - ab*t);
   if (d < best) { best = d; bs = acc + t*L; }
+}
+vec2 proj(vec2 w, float h){ vec2 v = w - C; float d = dot(v, Fw); return vec2(540. + f*dot(v, Rv)/d, ybh - f*(k*h - cz)/d); }
+// juego de trazos paralelos a 'dir' (px), separación sp, semiancho hw, cortados en tramos (fracturas)
+float strokes(vec2 px, vec2 dir, float sp, float hw, float seed, float brk){
+  vec2 n = vec2(-dir.y, dir.x);
+  float ph = dot(px, n)/sp + (vnoise(px/260. + seed) - .5)*.24;
+  float id = floor(ph + .5);
+  float dd = abs(fract(ph + .5) - .5)*sp;
+  float along = dot(px, dir);
+  float on = step(brk, vnoise(vec2(id*1.73 + seed, along/46.)));
+  return lineCov(dd, hw)*on;
+}
+void nw(vec2 w, float h, float yc, float hw, float ht, float sd, inout float nC){
+  float top = ht*(1. + (vnoise(vec2(w.y*.31, sd)) - .5)*.55);
+  float a = abs(w.y - yc)/hw + (vnoise(vec2(w.y*.45 + sd, h*1.1)) - .5)*.45;
+  float u = clamp(h/top, 0., 1.);
+  nC = max(nC, step(a, 1. - .5*pow(u, 1.4))*step(h, top));
 }
 void main(){
   vec2 px = vec2(uv.x*1080., (1. - uv.y)*BH);
@@ -71,7 +93,7 @@ void main(){
   // bordes por salto de profundidad (perfil de la cresta contra el cielo, cantos del acantilado)
   float dj = 0.;
   for (int i = 0; i < 4; i++) {
-    vec2 off = (i == 0 ? vec2(1.3, 0.) : i == 1 ? vec2(-1.3, 0.) : i == 2 ? vec2(0., 1.3) : vec2(0., -1.3))*texel;
+    vec2 off = (i == 0 ? vec2(1.6, 0.) : i == 1 ? vec2(-1.6, 0.) : i == 2 ? vec2(0., 1.6) : vec2(0., -1.6))*texel;
     vec4 q = texture(gb, uv + off);
     float dq = q.g < 1. ? 1e5 : q.g;
     float lq = step(1., q.g)*step(.02, q.r);
@@ -79,51 +101,57 @@ void main(){
     dj = max(dj, landM*(step(.035, jump) + (1. - lq)));
   }
   if (d < 1.) { o = vec4(0.); return; }
-  // normal del relieve (con exageración) desde la textura del mundo
   vec2 bu = (w - ext.xy)/(ext.zw - ext.xy);
   vec2 e = vec2(1.7, 0.);
   vec4 B = texture(bake, bu);
   float hx = texture(bake, bu + e.xy/(ext.zw - ext.xy)).r - texture(bake, bu - e.xy/(ext.zw - ext.xy)).r;
   float hy = texture(bake, bu + e.yx/(ext.zw - ext.xy)).r - texture(bake, bu - e.yx/(ext.zw - ext.xy)).r;
-  vec3 n = normalize(vec3(-k*hx/(2.*e.x), -k*hy/(2.*e.x), 1.));
+  vec2 gr = vec2(hx, hy)/(2.*e.x);
+  vec3 n = normalize(vec3(-k*gr, 1.));
   float lam = dot(n, sunD);
   float slope = degrees(acos(clamp(n.z, 0., 1.)));
   float rock = B.g;
   float shade = clamp(.55 - lam*2.2, 0., 1.);       // 0 = luz rasante en lo alto, 1 = cara oeste en sombra
-  // curvas cada 3 m con nivel de detalle: nunca a menos de 13 px
+  float wob = (vnoise(px/9.) - .5)*.7;
+  // dirección de la línea de máxima pendiente en pantalla
+  float gl = max(length(gr), 1e-4);
+  vec2 g2 = -gr/gl;
+  vec2 p0 = proj(w, h), p1 = proj(w + g2*2., h - 2.*gl);
+  vec2 fd = p1 - p0; fd = length(fd) > 1e-4 ? normalize(fd) : vec2(0., 1.);
+  if (fd.y < 0.) fd = -fd;
+  // limitar la inclinación de los trazos a 75–105° de pantalla (casi verticales, como diaclasas)
+  float ang = clamp(atan(fd.y, fd.x), radians(68.), radians(112.));
+  vec2 fdir = vec2(cos(ang), sin(ang));
+  // región empinada (con borde irregular, sin fundido)
+  float steepN = slope + (vnoise(w/9. + 3.) - .5)*10.;
+  float steep = step(33., steepN)*landM;
+  // A: trazos de fractura a lo largo de la pendiente, 13 px, 2,2–5 px según la sombra
+  float hwA = mix(1.1, 2.5, shade) + wob*.5;
+  float fA = strokes(px, fdir, 13., hwA, 1.3, .26)*steep;
+  // B: segundo juego cruzado a 60° solo en la sombra más honda
+  float deep = step(.82, shade)*step(40., steepN);
+  vec2 dB = vec2(cos(ang - radians(60.)), sin(ang - radians(60.)));
+  float fB = strokes(px, dB, 13., 1.15 + wob*.3, 7.1, .42)*deep*steep;
+  // curvas cada 3 m (con nivel de detalle: nunca a menos de 13 px) solo fuera de las paredes
   float Fh = h/3.;
   float fw = max(fwidth(Fh), 1e-5);
   float lod = max(0., log2(fw*13.));
   float L0 = floor(lod), fr = lod - L0;
-  float s0 = exp2(L0), s1 = exp2(L0 + 1.);
-  float wob = (vnoise(px/9.) - .5)*.7;
-  float hw = mix(1.1, 3.0, shade*shade)*mix(1., .8, smoothstep(0., 1., fr)) + wob*.5;
-  float c0 = lineCov(isoDist(Fh/s0), hw), c1 = lineCov(isoDist(Fh/s1), hw);
-  // diaclasas: las curvas del granito se interrumpen a trechos (fracturas), fijo en el mundo
-  float joint = smoothstep(.18, .3, vnoise(vec2(w.x + w.y*.3, h*6.)/vec2(7., 1.3)));
-  float cont = mix(c0, c1, smoothstep(.55, 1., fr))*landM*mix(1., joint, rock);
-  // trama cruzada en caras empinadas en sombra (60° y 120° de pantalla, 13 px)
-  float steep = smoothstep(56., 68., slope)*smoothstep(.9, 1., shade);
-  vec2 a1 = vec2(cos(radians(60.)), sin(radians(60.))), a2 = vec2(cos(radians(120.)), sin(radians(120.)));
-  float hwX = mix(.2, 1.35, steep);
-  float x1 = lineCov(abs(fract(dot(px, vec2(-a1.y, a1.x))/13. + .5) - .5)*13., hwX)*step(.05, steep)*step(.55, vnoise(w/6. + 5.));
-  float deep = smoothstep(52., 64., slope)*smoothstep(.95, 1., shade);
-  float x2 = lineCov(abs(fract(dot(px, vec2(-a2.y, a2.x))/13. + .5) - .5)*13., mix(.2, 1.2, deep))*step(.05, deep);
-  float cross = x1*landM; x2;
-  // grutas: cuñas oscuras al pie del acantilado
-  float notch = 0.;
+  float c0 = lineCov(isoDist(Fh/exp2(L0)), 1.1 + wob*.4), c1 = lineCov(isoDist(Fh/exp2(L0 + 1.)), 1.1 + wob*.4);
+  float cont = (fr < .5 ? c0 : c1)*landM*(1. - steep);
+  // grutas: cuñas oscuras irregulares al pie del acantilado oeste
+  float nC = 0.;
   ${notches}
-  notch *= (1. - smoothstep(4., 14., h))*step(.5, rock + shade)*landM;
-  float nC = smoothstep(.35, .55, notch);
+  nC *= step(.45, shade)*step(24., slope)*landM;
   // sendero: línea de puntos ocre a lo largo de la cresta
   float best = 1e9, bs = 0., acc = 0.;
   ${segs}
   float dotP = fract(bs*2059./(d*11.));
-  float trail = (1. - smoothstep(3.5, 6.5, best))*lineCov(abs(dotP - .5)*11., 1.9)*landM*step(.5, 1. - nC);
-  float outline = lineCov(0., 1.25)*min(dj, 1.);
-  float granite = max(max(cont*mix(.35, 1., rock), cross), max(nC, outline));
-  float grass = cont*(1. - rock)*(1. - step(.5, granite));
-  o = vec4(granite, grass, trail, landM);
+  float trail = (1. - smoothstep(3.5, 6.5, best))*lineCov(abs(dotP - .5)*11., 1.9)*landM*step(.5, 1. - nC)*(1. - steep);
+  float outline = min(dj, 1.);
+  float granite = max(max(max(fA, fB), nC), max(outline, cont*step(.5, rock)));
+  float grass = cont*(1. - step(.5, rock))*(1. - step(.5, granite));
+  o = vec4(granite, grass, trail*(1. - granite), landM);
 }`;
   }
 
@@ -177,7 +205,7 @@ void main(){
     const lp = G.program(landFS(cfg));
     return {
       render(draw) {
-        draw(lp, { gb: gt, bake: terr.bakeTex, ext, texel: [1 / W, 1 / BH], k: cam.k, BH, sunD: [Math.sin(az) * Math.cos(el), Math.cos(az) * Math.cos(el), Math.sin(el)] }, tgt);
+        draw(lp, { gb: gt, bake: terr.bakeTex, ext, texel: [1 / W, 1 / BH], k: cam.k, BH, sunD: [Math.sin(az) * Math.cos(el), Math.cos(az) * Math.cos(el), Math.sin(el)], C: cam.C.slice(0, 2), Fw: cam.F, Rv: cam.R, f: cam.f, cz: cam.C[2], ybh: cam.ybh }, tgt);
         gl.deleteBuffer(vb); gl.deleteBuffer(ib); gl.deleteVertexArray(vao); gl.deleteRenderbuffer(rb); gl.deleteFramebuffer(fb);
         return { tex: tgt.tex, gbuf: gt, ms: performance.now() - t0 };
       },
@@ -241,32 +269,44 @@ void main(){
       boat.parts.push({ name: 'inside', edge: true, path: gun, hatch: { dir: [0.2, 1] }, bb: [x - L * 0.5, y - Hh * 1.05, x + L * 0.52, y - Hh * 0.46] });
       boat.bb = [x - L * 0.5, y - Hh * 1.05, x + L * 0.52, y]; boat.heightPx = Hh * 1.05;
     }
-    // barco fondeado cerca del horizonte, más allá de la punta: casco bajo, dos palos, velas aferradas; sin banderas
+    // barco fondeado cerca del horizonte, más allá de la punta: casco con arrufo, dos palos algo inclinados, velas aferradas
+    // colgando de vergas cortas e inclinadas (ninguna verga sobresale de su vela), cable del ancla; sin banderas.
+    // Se talla por partes: casco (de abajo arriba), cable, palos, velas.
     const sp = fc.ship;
     const ship = { pose: 'ship', parts: [], footX: sp.x, footY: cam.ybh + 2, facing: 1 };
     {
-      const L = sp.hull, x = sp.x, y = cam.ybh + 2.5, hh = 7;
+      const L = sp.hull, x = sp.x, y = cam.ybh + 2.5, hh = 8;
       const hull = new Path2D();
-      hull.moveTo(x - L * 0.5, y - hh); hull.lineTo(x + L * 0.5, y - hh - 1.5); hull.lineTo(x + L * 0.42, y); hull.lineTo(x - L * 0.44, y + 0.5); hull.closePath();
-      ship.parts.push({ name: 'hull', path: hull, hatch: { dir: [1, 0] }, bb: [x - L * 0.5, y - hh - 2, x + L * 0.5, y + 1] });
-      const mast = (mx, top) => { const p = new Path2D(); p.rect(mx - 1.2, y - top, 2.4, top - hh + 1); return p; };
-      ship.parts.push({ name: 'm1', path: mast(x - L * 0.14, 46), hatch: { dir: [0, 1] }, bb: [x - L * 0.14 - 2, y - 46, x - L * 0.14 + 2, y] });
-      ship.parts.push({ name: 'm2', path: mast(x + L * 0.18, 38), hatch: { dir: [0, 1] }, bb: [x + L * 0.18 - 2, y - 38, x + L * 0.18 + 2, y] });
-      const furl = (mx, yy, w) => { const p = new Path2D(); p.ellipse(mx, yy, w, 2.2, 0, 0, Math.PI * 2); return p; };
-      ship.parts.push({ name: 'f1', path: furl(x - L * 0.14, y - 38, 11), hatch: { dir: [1, 0] }, bb: [x - L * 0.14 - 12, y - 41, x - L * 0.14 + 12, y - 35] });
-      ship.parts.push({ name: 'f2', path: furl(x - L * 0.14, y - 26, 14), hatch: { dir: [1, 0] }, bb: [x - L * 0.14 - 15, y - 29, x - L * 0.14 + 15, y - 23] });
-      ship.parts.push({ name: 'f3', path: furl(x + L * 0.18, y - 30, 10), hatch: { dir: [1, 0] }, bb: [x + L * 0.18 - 11, y - 33, x + L * 0.18 + 11, y - 27] });
-      // gavia a medio aferrar en el trinquete
-      const sail = new Path2D(); sail.moveTo(x + L * 0.18 - 9, y - 30); sail.lineTo(x + L * 0.18 + 9, y - 30); sail.lineTo(x + L * 0.18 + 7, y - 19); sail.lineTo(x + L * 0.18 - 8, y - 20); sail.closePath();
-      ship.parts.push({ name: 'sail', path: sail, hatch: { dir: [0, 1] }, bb: [x + L * 0.18 - 9, y - 30, x + L * 0.18 + 9, y - 19] });
-      ship.bb = [x - L * 0.5, y - 47, x + L * 0.5, y + 1]; ship.heightPx = 48;
+      hull.moveTo(x - L * 0.5, y - hh - 3); hull.quadraticCurveTo(x - L * 0.05, y - hh + 2.5, x + L * 0.5, y - hh - 4);
+      hull.lineTo(x + L * 0.41, y - 1); hull.quadraticCurveTo(x, y + 1.5, x - L * 0.43, y); hull.closePath();
+      ship.parts.push({ name: 'hull', path: hull, hatch: { dir: [1, 0] }, tw: [0, 0.34], bb: [x - L * 0.5, y - hh - 4, x + L * 0.5, y + 1.5] });
+      const cable = new Path2D(); cable.moveTo(x + L * 0.47, y - hh - 2); cable.lineTo(x + L * 0.49, y - hh - 2.8); cable.lineTo(x + L * 0.66, y + 2.2); cable.lineTo(x + L * 0.63, y + 2.6); cable.closePath();
+      ship.parts.push({ name: 'cable', path: cable, hatch: { dir: [0.5, 1] }, tw: [0.3, 0.4], bb: [x + L * 0.46, y - hh - 3, x + L * 0.67, y + 3] });
+      const mast = (mx, top, lean) => { const p = new Path2D(); p.moveTo(mx - 1.2, y - hh + 1); p.lineTo(mx + 1.2, y - hh + 1); p.lineTo(mx + 1.1 + lean, y - top); p.lineTo(mx - 1.1 + lean, y - top); p.closePath(); return p; };
+      const mA = x - L * 0.13, mB = x + L * 0.2;
+      ship.parts.push({ name: 'm1', path: mast(mA, 46, 1.6), hatch: { dir: [0, 1] }, tw: [0.38, 0.6], bb: [mA - 2, y - 46, mA + 3, y] });
+      ship.parts.push({ name: 'm2', path: mast(mB, 37, 1.3), hatch: { dir: [0, 1] }, tw: [0.42, 0.62], bb: [mB - 2, y - 37, mB + 3, y] });
+      // vela aferrada: fardo afinado que cuelga de una verga corta inclinada (la verga es su borde de arriba)
+      const furl = (mx, yy, len, tilt, sag) => {
+        const p = new Path2D(), dx = len / 2, dy = Math.tan((tilt * Math.PI) / 180) * dx;
+        p.moveTo(mx - dx, yy + dy); p.lineTo(mx + dx, yy - dy); p.quadraticCurveTo(mx + dx * 0.4, yy - dy + sag * 0.8, mx, yy + sag);
+        p.quadraticCurveTo(mx - dx * 0.5, yy + dy + sag * 0.9, mx - dx, yy + dy); p.closePath(); return p;
+      };
+      const lean = (top, yy) => (1.6 * (y - hh - yy)) / (top - hh);
+      ship.parts.push({ name: 'f1', path: furl(mA + lean(46, y - 37), y - 37, 17, 8, 5), hatch: { dir: [1, -0.14] }, tw: [0.6, 0.8], bb: [mA - 10, y - 41, mA + 10, y - 31] });
+      ship.parts.push({ name: 'f2', path: furl(mA + lean(46, y - 25), y - 25, 21, 7, 6), hatch: { dir: [1, -0.12] }, tw: [0.66, 0.88], bb: [mA - 12, y - 29, mA + 12, y - 18] });
+      ship.parts.push({ name: 'f3', path: furl(mB + lean(37, y - 29), y - 29, 16, 9, 5.5), hatch: { dir: [1, -0.16] }, tw: [0.72, 0.94], bb: [mB - 9, y - 33, mB + 9, y - 23] });
+      ship.parts.push({ name: 'f4', path: furl(mB + lean(37, y - 19), y - 19, 18, 6, 6), hatch: { dir: [1, -0.1] }, tw: [0.78, 1], bb: [mB - 10, y - 23, mB + 10, y - 12] });
+      ship.bb = [x - L * 0.5, y - 47, x + L * 0.67, y + 3]; ship.heightPx = 48;
     }
     // render de cada figura
-    const shadowK = { len: 1.05, shear: 0.42 };
+    const shadowK = { len: 1.35, shear: 0.45 };
+    const clearers = [];
     figs.sort((a, b) => b.f.d - a.f.d);
     for (const { f, fig } of figs) {
       const isDyn = !!f.cut;
-      const o = F.renderDay(fig, { shadow: shadowK, dyn: isDyn, erode: fig.heightPx < 150 ? 3 : 5 });
+      const o = F.renderDay(fig, { shadow: f.clearShadows ? null : shadowK, dyn: isDyn, erode: fig.heightPx < 150 ? 3 : 5, order: f.order });
+      if (f.clearShadows) clearers.push(o);
       if (!isDyn) {
         put(statInk, o, o.shadow, (i, v) => (statInk[i] = Math.max(statInk[i], v)));
         put(statMask, o, o.mask, (i, v) => (statMask[i] = Math.max(statMask[i], v)));
@@ -278,13 +318,18 @@ void main(){
         for (let y = 0; y < o.h; y++) for (let x = 0; x < o.w; x++) {
           const X = x + o.x0, Y = y + o.y0; if (X < 0 || Y < 0 || X >= W || Y >= BH) continue;
           const i = y * o.w + x, j = (Y * W + X) * 4;
-          const hc = o.hatch[i] * (o.inside[i] ? 1 : 0) * (1 - o.gap[i]);
+          const hc = Math.max(o.hatch[i] * (o.inside[i] ? 1 : 0), f.order ? o.outl[i] : 0);
           if (hc > 0.02) { dyn[j] = Math.max(dyn[j], Math.round(hc * 255)); dyn[j + 1] = T(o.hTime[i]); }
-          const cc = Math.max(o.core[i] * (1 - o.gap[i]), o.contact[i], o.shadow ? o.shadow[i] : 0);
+          const cc = Math.max(o.core[i], o.contact[i], o.shadow ? o.shadow[i] : 0);
           if (cc > 0.02) { dyn[j + 2] = Math.max(dyn[j + 2], Math.round(cc * 255)); dyn[j + 3] = T(o.contact[i] > 0.02 || (o.shadow && o.shadow[i] > 0.02) ? 1 : o.cTime[i]); }
           if (o.mask[i] > 0.5) { const tm = (tEnc(a + ((b - a) * o.mTime[i]) / end) - 1) / 254; dynMaskT[Y * W + X] = dynMaskT[Y * W + X] > 0 ? Math.min(dynMaskT[Y * W + X], tm + 0.004) : tm + 0.004; }
         }
       }
+    }
+    // O6: ninguna sombra ajena sobre el niño que se está tallando (arena limpia bajo su huella + 10 px)
+    for (const o of clearers) for (let y = 0; y < o.h; y++) for (let x = 0; x < o.w; x++) {
+      const X = x + o.x0, Y = y + o.y0; if (X < 0 || Y < 0 || X >= W || Y >= BH) continue;
+      const i = Y * W + X; if (o.dIn[y * o.w + x] < 10 && statMask[i] < 0.5) statInk[i] = 0;
     }
     for (const [obj, cut] of [[boat, bt.cut], [ship, [sp.at, sp.at + sp.dur]]]) {
       const o = F.renderDay(obj, { dyn: true, erode: obj === ship ? 1.2 : 3, spacing: obj === ship ? 4 : 7, width: obj === ship ? 1.6 : 3.2, contactW: obj === ship ? 0.0001 : 0.7, ring: obj === ship ? 1 : 1.5, edgeMinPx: 1e9 });
@@ -353,15 +398,17 @@ void main(){
     };
   };
 
-  // Línea de agua de la playa en primer plano: distancia (m) según la x de búfer; se abre a la derecha, donde la playa sale.
+  // Línea de agua de la playa en primer plano: distancia (m) según la x de búfer. Casi recta bajo la gente; a la derecha la playa
+  // se curva y se aleja en una media luna suave (allí, sobre arena, los colonos y el bote).
+  OB.shoreK = [[-40, 18.8], [150, 18.6], [330, 18.4], [500, 18.2], [620, 18.45], [700, 19.6], [780, 22.3], [860, 26.4], [940, 30.6], [1020, 33.6], [1120, 35.2]];
   OB.waterD = function (cfg, xb) {
-    const K = [[-40, 23.5], [150, 22.4], [330, 21.4], [560, 20.2], [700, 19.9], [800, 21.5], [880, 27], [960, 33], [1040, 37], [1120, 40]];
+    const K = OB.shoreK;
     if (xb <= K[0][0]) return K[0][1];
     for (let i = 0; i < K.length - 1; i++) if (xb <= K[i + 1][0]) { const u = (xb - K[i][0]) / (K[i + 1][0] - K[i][0]), s = u * u * (3 - 2 * u); return K[i][1] + (K[i + 1][1] - K[i][1]) * s; }
     return K[K.length - 1][1];
   };
   OB.waterGLSL = function () {
-    const K = [[-40, 23.5], [150, 22.4], [330, 21.4], [560, 20.2], [700, 19.9], [800, 21.5], [880, 27], [960, 33], [1040, 37], [1120, 40]];
+    const K = OB.shoreK;
     let s = `float waterD(float x){\n  float v = ${K[0][1].toFixed(2)};\n`;
     for (let i = 0; i < K.length - 1; i++) s += `  v = mix(v, mix(${K[i][1].toFixed(2)}, ${K[i + 1][1].toFixed(2)}, smoothstep(${K[i][0].toFixed(1)}, ${K[i + 1][0].toFixed(1)}, x)), step(${K[i][0].toFixed(1)}, x));\n`;
     return s + '  return v;\n}\n';

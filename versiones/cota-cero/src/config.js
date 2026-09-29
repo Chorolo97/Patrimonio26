@@ -43,45 +43,49 @@ window.REEL_CONFIG = {
   },
 
   views: {
-    plan: { center: [40, 900], widthM: 1500, overscan: 1.1, push: [2.8, 7.6, 1.0, 1.05], pull: [15.05, 19.5, 1.05, 1.0] },
+    plan: { center: [40, 900], widthM: 1500, overscan: 1.1, push: [2.8, 7.6, 1.0, 1.05], pull: [15.05, 19.0, 1.05, 1.0] },
     contours: { step: 5, major: 25, majorExtra: 0.8, fadeFw: 1 / 6 },
     hachure: { dsep: 12, dtest: 5.5, step: 1.5, minLen: 8, maxLen: 60, minSlopeDeg: 3, wMin: 0.9, wMax: 4.2, slopeFull: 40, sunAz: 96, sunEl: 12 },
     grotto: { push: [7.6, 15.0, 1.0, 1.03], center: [540, 1100], dsep: 13, work: [540, 960] },
     oblique: {
-      cam: [-655, 1528, 4.0], yawOffsetDeg: 3.0, fovDeg: 50, focal: 2059, k: 1.4,
-      horizon: [[20.5, 880], [35.0, 1060]], bufH: 2200, bufHorizon: 1060, mesh: 512,
-      contourStep: 3, near: 120, box: [-350, -200, 700, 1150],
-      sky: { spacing: 14, topW: 2.6, clouds: [[330, 70], [610, 55]] },
-      sea: { dlog: 0.056, waveAmp: 5, swashM: 4, swellFrom: 160 },
-      echo: { aspect: 3.4, rho0: 14, lambda: 0.33, speed: 0.55, gap: 5, front: 11 },
+      // cámara baja sobre la arena de Portezuelo, cerca de la sierra: la pared oeste llena el tercio superior izquierdo
+      cam: [-250, 1315, 2.5], tipX: 690, fovDeg: 50, focal: 2059, k: 1.4,
+      // inclinación: quieta hasta el golpe de 22,23 s y luego lineal (≈1,3 px/cuadro) hasta el encuadre del cierre
+      horizon: [[22.23, 740], [35.0, 1250]], horizonEase: 0.02, bufH: 2460, bufHorizon: 1250, mesh: 512,
+      contourStep: 3, near: 120, box: [-330, -200, 700, 1250],
+      sky: { spacing: 14, topW: 2.6, clouds: [[360, 70], [700, 60]] },
+      sea: { dlog: 0.056, waveAmp: 5, swashM: 3, swellFrom: 160 },
+      echo: { aspect: 2.6, rho0: 10, lambda: 0.3, speed: 0.62, gap: 7, front: 7.5, left: 330 },
     },
   },
 
   fronts: {
     M1: { t: [7.6, 8.6], noise: 20, feather: 35, line: 2 },
     M2: { t: [12.8, 15.05], dur: [12.8, 15.0], noise: 30, feather: 60, line: 3 },
-    M3: { t: [19.5, 20.5], noise: 16, feather: 40, line: 2 },
+    M3: { t: [18.0, 19.0], noise: 16, feather: 40, line: 2.5 },
   },
 
   timeline: { emerge: [0.2, 2.8], trailCut: [2.8, 3.5], ringsOpen: [0.2, 2.8], echoes: 32.5, echoFull: 35.0 },
 
   figures: {
     grotto: [
-      { id: 'G2', pose: 'standBundle', foot: [983, 1904], h: 283, facing: -1 },
-      { id: 'G3', pose: 'childCrouch', foot: [262, 1876], h: 110, facing: 1 },
-      { id: 'G1', pose: 'elderSeated', foot: [151, 1887], h: 165, facing: 1 },
+      { id: 'G2', pose: 'standBundle', foot: [948, 1846], h: 283, facing: -1 },
+      { id: 'G3', pose: 'childCrouch', foot: [292, 1832], h: 125, facing: 1 },
+      { id: 'G1', pose: 'elderSeated', foot: [150, 1840], h: 190, facing: 1 },
     ],
     oblique: [
-      { id: 'O4', pose: 'elderSeated', d: 16, x: 150, facing: 1, rock: true },
-      { id: 'O1', pose: 'standBundle', d: 14, x: 330, facing: -1 },
-      { id: 'O2', pose: 'childCrouch', d: 14.5, x: 420, facing: -1 },
-      { id: 'O3', pose: 'gather', d: 19, x: 560, facing: 1 },
-      { id: 'O5', pose: 'standStaff', d: 20, x: 700, facing: 1 },
-      { id: 'C1', pose: 'colonBundle', d: 28, x: 918, facing: -1, cut: [24.6, 25.8] },
-      { id: 'C2', pose: 'colonStick', d: 27.5, x: 992, facing: -1, cut: [25.2, 26.4] },
-      { id: 'O6', pose: 'childCrouch', d: 13, x: 245, facing: 1, cut: [37.8, 40.0], cutEnd: 0.7 },
+      { id: 'O4', pose: 'elderSeated', d: 15.5, x: 140, facing: 1, rock: true },
+      { id: 'O1', pose: 'standBundle', d: 14, x: 345, facing: -1 },
+      { id: 'O2', pose: 'childCrouch', d: 14.5, x: 440, facing: -1 },
+      { id: 'O3', pose: 'gather', d: 17.2, x: 585, facing: 1 },
+      { id: 'O5', pose: 'standStaff', d: 18.2, x: 735, facing: -1 },
+      // colonos: tres cuartos, mirando tierra adentro (izquierda); se tallan contorno → núcleo → trama
+      { id: 'C1', pose: 'colonBundle', d: 24.5, x: 900, facing: -1, cut: [24.6, 25.8], order: 'outline' },
+      { id: 'C2', pose: 'colonStick', d: 24, x: 985, facing: -1, cut: [25.2, 26.4], order: 'outline' },
+      // O6 (futuro): contorno a buril, luego la trama en diagonal y el núcleo desde los pies; ≈70 % a los 40 s
+      { id: 'O6', pose: 'childCrouch', d: 12.6, x: 238, facing: 1, cut: [37.8, 40.0], cutEnd: 0.7, order: 'future', clearShadows: true },
     ],
-    boat: { d: 31.5, x: 1052, cut: [24.6, 25.4] },
-    ship: { x: 905, at: 22.23, dur: 0.9, hull: 50 },
+    boat: { d: 27, x: 1046, cut: [24.6, 25.4] },
+    ship: { x: 930, at: 22.23, dur: 0.9, hull: 56 },
   },
 };
