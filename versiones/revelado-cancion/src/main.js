@@ -146,7 +146,7 @@ window.createReel = async function (canvas, cfg) {
       return { ...f, unit: unitOf(f, kind), L, soft };
     });
     const atl = RV.buildFigureAtlas(list, cfg.light[pc.photo], pc.atlasS || 2);
-    const P = { ...pc, figs: list, gdef, hasB: list.some((f) => f.group) };
+    const P = { ...pc, figs: list, gdef, hasB: list.some((f) => f.group), groupIds: [...new Set(list.filter((f) => f.group).map((f) => f.group))].sort() };
     P.figA = atl.A ? gl.texture(atl.A) : dummy; P.boxA = atl.boxA || [-1e5, -1e5, 1, 1];
     P.figB = atl.B ? gl.texture(atl.B) : dummy; P.boxB = atl.boxB || [-1e5, -1e5, 1, 1];
     P.gbox = [1, 2, 3, 4].map((g) => atl.groups[g] || [1e5, 1e5, -1e5, -1e5]);
@@ -154,7 +154,7 @@ window.createReel = async function (canvas, cfg) {
     prints[pc.id] = P;
   }
   const progs = {};
-  const progFor = (P) => progs[P.id] || (progs[P.id] = gl.program(RV.printSource({ kind: P.kind, archive: !!P.archive, figB: P.hasB })));
+  const progFor = (P) => progs[P.id] || (progs[P.id] = gl.program(RV.printSource({ kind: P.kind, archive: !!P.archive, groups: P.groupIds })));
   lg('atlas listos');
   const compProg = gl.program(RV.compositeSource());
 
@@ -464,7 +464,7 @@ window.createReel = async function (canvas, cfg) {
   G.finish();
   // banco de pruebas de rendimiento (sólo depuración): tiempo de un pase de copia con el código modificado por `mod`
   const perfPass = (id, t, mod, n = 3) => {
-    const P = prints[id]; let src = RV.printSource({ kind: P.kind, archive: !!P.archive, figB: P.hasB }); if (mod) src = mod(src);
+    const P = prints[id]; let src = RV.printSource({ kind: P.kind, archive: !!P.archive, groups: P.groupIds }); if (mod) src = mod(src);
     const prog = gl.program(src);
     const R = relays.find((r) => r.print === id), rn = cfg.rinse;
     const common = { uT: Mt(t), uTr: t, uS: Sph(t), uWt: W2(t), uLow: at(A.low, t), uHigh: at(A.high, t), uRms: at(A.rms, t), uWtex: wTex, uNoise: noiseTex, uNW: NW, uMen: [R.t0, R.s0, R.v, R.a], uMen2: [R.bow, R.noiseAmp, R.seed, 0], uMen3: [0, 0.45, 0.03, 0], uMen4: [0, 0, 0, 0], uFigTau: 0.3, uDevAll: 1, uRinse: [0, -1e4, 0, 0], uSurge: 0, uSwashPhase: Sph(t) * 1.35, uGrottoPhase: 0.4, uOn: onsetInfo(t), uTone: toneTex, uIsOld: 0, uDualPass: 0 };

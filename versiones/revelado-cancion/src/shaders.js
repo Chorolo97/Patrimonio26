@@ -188,29 +188,11 @@ PR shade(vec2 p, float dev, float devFig){
   // figuras: la plata más densa de la copia, con su sombra pegada a los pies
   vec2 aq = (q - boxA.xy) / boxA.zw;
   if (aq.x > 0. && aq.y > 0. && aq.x < 1. && aq.y < 1.) {
-    vec4 F = texture(uFigA, vec2(aq.x, 1. - aq.y));
+    vec4 F = textureLod(uFigA, vec2(aq.x, 1. - aq.y), 0.);
     D += F.g * 1.05 * smoothstep(0., 0.6, devFig);
     fig(F, devFig, q, lightMul, 17u, 0.72, r);
   }
-#if HAS_FIGB
-  if (q.x > gU.x && q.y > gU.y && q.x < gU.z && q.y < gU.w) {
-    for (int gi = 0; gi < 4; gi++) {
-      vec4 gbx = gi == 0 ? gb1 : gi == 1 ? gb2 : gi == 2 ? gb3 : gb4;
-      vec4 gof = gi == 0 ? go1 : gi == 1 ? go2 : gi == 2 ? go3 : go4;
-      vec2 qq = q - gof.xy;
-      if (qq.x > gbx.x && qq.y > gbx.y && qq.x < gbx.z && qq.y < gbx.w) {
-        vec2 bq = (qq - boxB.xy) / boxB.zw;
-        if (bq.x > 0. && bq.y > 0. && bq.x < 1. && bq.y < 1.) {
-          vec4 F = texture(uFigB, vec2(bq.x, 1. - bq.y));
-          float devF = (gi == 0 ? grp.x : gi == 1 ? grp.y : gi == 2 ? grp.z : grp.w) * step(0.15, devFig);
-          float cw = gi == 0 ? gcw.x : gi == 1 ? gcw.y : gi == 2 ? gcw.z : gcw.w;
-          D += F.g * 1.05 * smoothstep(0., 0.6, devF);
-          fig(F, devF, qq, lightMul, 29u, cw, r);
-        }
-      }
-    }
-  }
-#endif
+__GROUPS__
   r.Dbg = D;
   r.arch *= 1. - dev;
   return r;
@@ -549,11 +531,30 @@ void main(){
     return code + '  return y;\n}\n';
   }
 
-  // o: {kind, archive, figB}
+
+  // bloque de un grupo de figuras (desenrollado: sólo se compilan los grupos que existen en la copia)
+  function groupBlock(i) {
+    const n = i + 1, c = 'xyzw'[i];
+    return `
+    {
+      vec2 qq = q - go${n}.xy;
+      if (qq.x > gb${n}.x && qq.y > gb${n}.y && qq.x < gb${n}.z && qq.y < gb${n}.w) {
+        vec2 bq = (qq - boxB.xy) / boxB.zw;
+        if (bq.x > 0. && bq.y > 0. && bq.x < 1. && bq.y < 1.) {
+          vec4 F = textureLod(uFigB, vec2(bq.x, 1. - bq.y), 0.);
+          float devF = grp.${c} * step(0.15, devFig);
+          D += F.g * 1.05 * smoothstep(0., 0.6, devF);
+          fig(F, devF, qq, lightMul, 29u, gcw.${c}, r);
+        }
+      }
+    }`;
+  }
+  // o: {kind, archive, groups: [ids 1..4 presentes]}
   RV.printSource = function (o) {
     const K = KINDS[o.kind];
-    const defs = `#define KIND ${K.id}\n#define ARCHIVE ${o.archive ? 1 : 0}\n#define HAS_FIGB ${o.figB ? 1 : 0}\n`;
-    const body = PRINT_BODY.replace('__WARP__', K.warp || '').replace('__LIVE__', K.live || '').replace('__POST__', K.post || '');
+    const defs = `#define KIND ${K.id}\n#define ARCHIVE ${o.archive ? 1 : 0}\n`;
+    const groups = (o.groups || []).length ? `  if (q.x > gU.x && q.y > gU.y && q.x < gU.z && q.y < gU.w) {${o.groups.map((g) => groupBlock(g - 1)).join('')}\n  }` : '';
+    const body = PRINT_BODY.replace('__WARP__', K.warp || '').replace('__LIVE__', K.live || '').replace('__POST__', K.post || '').replace('__GROUPS__', groups);
     return PRINT_HEAD.replace('__DEFINES__', defs).replace('__WATERLINE__', '') + body;
   };
 
