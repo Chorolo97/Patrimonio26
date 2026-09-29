@@ -133,8 +133,9 @@ window.createReel = async function (canvas, cfg) {
     timings.closingBlock = { top: y0, bottom: +y.toFixed(1), cx };
     return rows.map((r) => [cx - r.w / 2, r.y0, cx + r.w / 2, r.y1]);
   })();
-  const obOnsets = onsets.filter((o) => o.t >= 20.5);
+  const obOnsets = onsets.filter((o) => o.t >= 19.0);
   const E = ov.echo, echoS0 = Sof(cfg.timeline.echoes);
+  const blk = timings.closingBlock;
   function obliqueUniforms(t) {
     const hY = OB.horizonAt(cfg, t);
     const past = obOnsets.filter((o) => o.t <= t).slice(-4);
@@ -144,15 +145,15 @@ window.createReel = async function (canvas, cfg) {
     return {
       land: landB.tex, stat: statTex, dyn: dynTex,
       yOff: cam.ybh - hY, ybh: cam.ybh, BH: cam.BH, f: cam.f, cz: cam.C[2], t, S, low, wmul: 0.9 + 0.2 * at('rmsSmooth', t),
-      skyK: 1 - (1 - cfg.closing.skyMin) * PBS.smooth((t - cfg.closing.skyFadeFrom) / 0.8),
-      echoFront: eOn ? E.front * PBS.smooth((t - cfg.timeline.echoes) / (cfg.timeline.echoFull - cfg.timeline.echoes)) : 0,
-      echoPhase: E.speed * (S - echoS0), echoAmp: eOn ? 1 - 0.3 * PBS.smooth((t - cfg.closingAt) / 5) : 0,
+      echoFront: E.front, echoT0: cfg.timeline.echoes, echoLeft: E.left,
+      echoPhase: E.speed * (S - echoS0), echoAmp: eOn ? 1 : 0,
       swash: ov.sea.swashM * (0.5 + 0.5 * Math.sin(S * 2.1)) * (0.6 + 0.8 * low) * decay(t),
       closeK: PBS.smooth((t - cfg.closingAt) / 0.8), decayK: decay(t),
+      clearK: PBS.clamp((t - cfg.closing.skyFadeFrom) / (cfg.closingAt - cfg.closing.skyFadeFrom), 0, 1),
+      clr: [blk.cx, (blk.top + blk.bottom) / 2, cfg.closing.clearTo, 160],
       tipB: [tipB[0], tipB[1]], shipBox: obFig.shipBox, shipBob: Math.sin(t * 1.3) * 1.0 * decay(t),
       on0: past.map((o) => o.t), am0: past.map((o) => Math.min(6, o.A * rp.bigGain)),
-      r0: closeRects[0], r1: closeRects[1], r2: closeRects[2], r3: closeRects[3], r4: closeRects[4],
-      skyP: [ov.sky.spacing, ov.sky.topW, ov.sky.clouds[0][0], ov.sky.clouds[1][0]],
+      skyP: [ov.sky.spacing, ov.sky.topW, 0, 0],
       seaP: [ov.sea.dlog, ov.sea.waveAmp, 0, ov.sea.swellFrom], echoP: [E.aspect, E.rho0, E.lambda, E.gap],
       ...palU,
     };
@@ -188,35 +189,38 @@ window.createReel = async function (canvas, cfg) {
     return [x0, H - y1, x1 - x0, y1 - y0]; // coordenadas GL (origen abajo)
   }
   function frontPass(t, A, B, o) {
-    const m = o.amp + 6;
+    const m = o.oct[0] + o.oct[2] + o.oct2[0] + o.oct2[2] + (o.burr || 0) + 12;
     gl.enable(gl.SCISSOR_TEST);
     let b = halfBox(o.dir, o.pos, 1, m); gl.scissor(b[0], b[1], b[2], b[3]); if (b[2] > 0 && b[3] > 0) views[A](t, tA);
     b = halfBox(o.dir, o.pos, -1, m); gl.scissor(b[0], b[1], b[2], b[3]); if (b[2] > 0 && b[3] > 0) views[B](t, tB);
     gl.disable(gl.SCISSOR_TEST);
-    draw(progFront, { ta: tA.tex, tb: tB.tex, ...o }, null);
+    draw(progFront, { ta: tA.tex, tb: tB.tex, burr: 0, ...o }, null);
   }
+  const nrm = (v) => { const n = Math.hypot(v[0], v[1]); return [v[0] / n, v[1] / n]; };
+  // extensión de dot(px, dir) sobre el cuadro
+  const span = (dir) => { const v = [[0, 0], [1080, 0], [0, 1920], [1080, 1920]].map((p) => p[0] * dir[0] + p[1] * dir[1]); return [Math.min(...v), Math.max(...v)]; };
   function renderGL(t) {
-    const m1 = Fz.M1.t, m2 = Fz.M2.t;
+    const m1 = Fz.M1.t, m2 = Fz.M2.t, m3 = Fz.M3.t;
     if (t < m1[0]) return views.planNight(t, null);
     if (t < m1[1]) {
       // diagonal: de abajo-derecha hacia arriba-izquierda
-      const d = [-0.62, -0.78], n = Math.hypot(d[0], d[1]), dir = [d[0] / n, d[1] / n];
-      const f0 = dir[0] * 1080 + dir[1] * 1920 - 60, f1 = 60;
+      const dir = nrm([-0.62, -0.78]), [lo, hi] = span(dir), mg = 150;
       const p = PBS.ease((t - m1[0]) / (m1[1] - m1[0]));
-      return frontPass(t, 'planNight', 'grotto', { dir, pos: f0 + (f1 - f0) * p, amp: Fz.M1.noise, feather: Fz.M1.feather, lineW: Fz.M1.line, nscale: 90, seed: 3, lineCol: palU.cLand });
+      return frontPass(t, 'planNight', 'grotto', { dir, pos: lo - mg + (hi - lo + 2 * mg) * p, oct: [80, 400, 20, 60], oct2: [5, 11, 30, 520], lineW: Fz.M1.line, seed: 3, lineCol: palU.cLand });
     }
     if (t < m2[0]) return views.grotto(t, null);
     if (t < m2[1]) {
-      const p = PBS.smooth((t - Fz.M2.dur[0]) / (Fz.M2.dur[1] - Fz.M2.dur[0]));
-      const dir = [-1, 0], f0 = -1080 - 90, f1 = 90;
-      return frontPass(t, 'grotto', 'planDay', { dir, pos: f0 + (f1 - f0) * p, amp: Fz.M2.noise, feather: Fz.M2.feather, lineW: Fz.M2.line, nscale: 150, seed: 7, lineCol: palU.cOchre });
+      // alba: de derecha a izquierda (este → oeste) y apenas en diagonal hacia abajo, como luz rasante;
+      // avanza durante todo el respiro (0,15·u + 0,85·u²) y pasa por la gente de la gruta al final (≈ 14,8 s)
+      const u = PBS.clamp((t - Fz.M2.dur[0]) / (Fz.M2.dur[1] - Fz.M2.dur[0]), 0, 1), p = 0.15 * u + 0.85 * u * u;
+      const dir = nrm([-1, 0.22]), [lo, hi] = span(dir), mg = 330;
+      return frontPass(t, 'grotto', 'planDay', { dir, pos: lo - mg + (hi - lo + 2 * mg) * p, oct: [120, 520, 32, 70], oct2: [7, 12, 80, 610], lineW: 3.8, seed: 7, lineCol: palU.cOchre, burr: 38 });
     }
-    const m3 = Fz.M3.t;
     if (t < m3[0]) return views.planDay(t, null);
     if (t < m3[1]) {
       const p = PBS.ease((t - m3[0]) / (m3[1] - m3[0]));
-      const dir = [0, -1], f0 = -1920 - 70, f1 = 70;
-      return frontPass(t, 'planDay', 'oblique', { dir, pos: f0 + (f1 - f0) * p, amp: Fz.M3.noise, feather: Fz.M3.feather, lineW: Fz.M3.line, nscale: 120, seed: 11, lineCol: palU.cGranite });
+      const dir = [0, -1], [lo, hi] = span(dir), mg = 140;
+      return frontPass(t, 'planDay', 'oblique', { dir, pos: lo - mg + (hi - lo + 2 * mg) * p, oct: [60, 400, 15, 55], oct2: [4, 11, 26, 380], lineW: Fz.M3.line, seed: 11, lineCol: palU.cGranite });
     }
     return views.oblique(t, null);
   }

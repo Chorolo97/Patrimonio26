@@ -6,10 +6,21 @@
   const f1 = (v) => (Number.isInteger(v) ? v.toFixed(1) : String(v));
 
   // Polígono de tierra (bahías y playas); la sierra se suma por encima con un máximo suave.
+  // Chaikin (curva abierta, extremos fijos): medias lunas suaves y cóncavas en vez de segmentos con esquinas
+  function chaikin(pts, it) {
+    let a = pts;
+    for (let k = 0; k < it; k++) {
+      const b = [a[0]];
+      for (let i = 0; i < a.length - 1; i++) { const p = a[i], q = a[i + 1]; b.push([0.75 * p[0] + 0.25 * q[0], 0.75 * p[1] + 0.25 * q[1]], [0.25 * p[0] + 0.75 * q[0], 0.25 * p[1] + 0.75 * q[1]]); }
+      b.push(a[a.length - 1]); a = b;
+    }
+    return a;
+  }
+  T.chaikin = chaikin;
   function landPolygon(W) {
-    const west = W.westBeach.slice().reverse();
+    const west = chaikin(W.westBeach, 4).reverse();
     const cut = [[-60, 1150], [20, 900], [58, 640], [150, 600]];
-    const east = W.eastBeach;
+    const east = chaikin(W.eastBeach, 4);
     const [x0, y0, x1, y1] = W.extent;
     return [...west, ...cut, ...east, [x1 + 200, east[east.length - 1][1]], [x1 + 200, y1 + 200], [x0 - 200, y1 + 200], [x0 - 200, west[0][1]]];
   }
@@ -40,6 +51,7 @@ void main(){
     acc += L;
   }
   sd += (fbm(p/420. + 4.) - .5)*2.*(sd > 0. ? 40. : 6.);
+  if (sd < 0.) sd += (fbm(p/55. + 11.) - .5)*2.*9.;
   float Ww = mix(${f1(W.Ww[0])}, ${f1(W.Ww[1])}, vnoise(vec2(sa/380., 3.1)));
   float We = mix(${f1(W.We[0])}, ${f1(W.We[1])}, vnoise(vec2(sa/650., 7.7))) * (.3 + .7*smoothstep(4., 50., hc));
   float pw = mix(${f1(W.plateau[0])}, ${f1(W.plateau[1])}, vnoise(vec2(sa/420., 1.3)));
@@ -75,13 +87,14 @@ void main(){
   float s = texture(poly, uv).r;
   float base;
   if (s >= 0.) {
-    float sw = mix(30., 60., vnoise(p/300.));
+    float sw = mix(45., 80., vnoise(p/300.));
     float sand = mix(.4, 2., smoothstep(0., sw, s));
     float prad = 2. + 2.2*smoothstep(sw, sw + 450., s) + (vnoise(p/700.) - .5)*1.2*smoothstep(60., 260., s);
     base = mix(sand, prad, smoothstep(sw*.7, sw*1.3, s));
     // lomas suaves tierra adentro (colinas redondeadas, sin ruido fino)
     vec2 q1 = (p - vec2(-700., 2230.))/vec2(380., 230.), q2 = (p - vec2(560., 2330.))/vec2(420., 250.), q3 = (p - vec2(250., 2150.))/vec2(260., 180.);
-    float lom = 13.5*exp(-dot(q1, q1)) + 12.5*exp(-dot(q2, q2)) + 7.*exp(-dot(q3, q3)) + 3.*smoothstep(1700., 2700., p.y);
+    float lom = 13.5*exp(-dot(q1, q1)) + 12.5*exp(-dot(q2, q2)) + 7.*exp(-dot(q3, q3)) + 3.*smoothstep(1700., 2700., p.y)
+              + 9.*(fbm(p/360. + 9.) - .38)*smoothstep(1050., 1700., p.y);
     base += lom * smoothstep(80., 300., s);
   } else {
     base = max(.4 + s*.06, ${f1(W.seaFloor[0])} + (${f1(W.seaFloor[1] - W.seaFloor[0])})*smoothstep(40., 900., -s));
@@ -107,7 +120,7 @@ void main(){
   float rock = min(1., sm(21., 29., slope) + c.g*.85) * step(-.5, h);
   vec4 A = texture(aux, uv);
   float s = texture(poly, uv).r;
-  float sand = sm(-8., -1., s)*(1. - sm(42., 62., s))*(1. - sm(1.8, 2.8, h))*(1. - rock);
+  float sand = sm(-8., -1., s)*(1. - sm(60., 90., s))*(1. - sm(1.8, 2.8, h))*(1. - rock);
   o = vec4(h, rock, sand, texture(Dt, uv).r);
 }`;
   const downFS = `#version 300 es
@@ -157,7 +170,7 @@ void main(){ o = texture(hb, uv); }`;
       const sl = Math.atan(Math.hypot((H2[xp] - H2[xm]) / (2 * cell), (H2[yp] - H2[ym]) / (2 * cell))) * 57.2958;
       rock[i] = Math.min(1, sm(21, 29, sl) + knob[i] * 0.85) * (H2[i] > -0.5 ? 1 : 0);
       const s = polySdf[i] * cell;
-      sand[i] = sm(-8, -1, s) * (1 - sm(42, 62, s)) * (1 - sm(1.8, 2.8, H2[i])) * (1 - rock[i]);
+      sand[i] = sm(-8, -1, s) * (1 - sm(60, 90, s)) * (1 - sm(1.8, 2.8, H2[i])) * (1 - rock[i]);
     }
     // 4) distancia firmada a la costa (m), + en el mar; y distancia a la costa de la punta
     const sdl = U.sdf(land, R, R);

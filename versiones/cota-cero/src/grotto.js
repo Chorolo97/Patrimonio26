@@ -68,42 +68,62 @@
     const dirAt = (X, Y, rot) => { const a = Math.atan2(samp(ss2, X, Y), samp(sc2, X, Y)) / 2 + rot; return [Math.cos(a), Math.sin(a)]; };
     const tone = (X, Y) => samp(Lt, X, Y);
     const floorY = H * 0.835;
+    // borde superior del suelo: ondulado (±25 px) para que la arena suba hacia la base de la pared
+    const floorAt = (X) => floorY + (nz.fbm(X / 170, 4.2, 3) - 0.5) * 2 * 25 + (nz.n2(X / 40, 9.1) - 0.5) * 10;
     const edge = (X, Y) => { const e = Math.min(X, W - X, Y, H - Y); return Math.max(0, Math.min(1, (e - 6) / 70)); };
     const t1 = performance.now();
     // juego principal (paredes): se omite el interior de la cueva y la arena
     const main = S.trace({
       w: W, h: H, dsep: gv.dsep, dtest: gv.dsep * 0.45, step: 2, maxLen: 300, minLen: 18, seedStep: gv.dsep * 1.3, oriented: true,
-      field: (X, Y) => (tone(X, Y) < 0.13 || Y > floorY - 6 ? null : dirAt(X, Y, 0)),
+      field: (X, Y) => (Y > floorAt(X) + 14 ? null : dirAt(X, Y, 0)),
     });
     const second = S.trace({
       w: W, h: H, dsep: gv.dsep, dtest: gv.dsep * 0.45, step: 2, maxLen: 140, minLen: 14, seedStep: gv.dsep * 1.3, oriented: true,
-      field: (X, Y) => (tone(X, Y) < 0.74 || Y > floorY ? null : dirAt(X, Y, (70 * Math.PI) / 180)),
+      field: (X, Y) => (tone(X, Y) < 0.7 || Y > floorAt(X) + 10 ? null : dirAt(X, Y, (70 * Math.PI) / 180)),
     });
+    // histéresis del tono a lo largo de cada línea: un trazo que empezó sigue hasta que el tono baja del umbral inferior,
+    // y ningún tramo mide menos de 30 px: líneas de fractura continuas o plancha limpia, nunca bloques picados
+    const runs = (lines, hi, lo, minPx) => {
+      const out = [];
+      for (const Ln of lines) {
+        let on = false, cur = null;
+        for (const p of Ln) {
+          const tt = tone(p[0], p[1]);
+          if (!on && tt > hi) { on = true; cur = [p]; } else if (on && tt < lo) { on = false; if (cur.length * 2 >= minPx) out.push(cur); cur = null; } else if (on) cur.push(p);
+        }
+        if (on && cur.length * 2 >= minPx) out.push(cur);
+      }
+      return out;
+    };
     const t2 = performance.now();
     const minW = cfg.lines.minWidth, maxW = cfg.lines.maxWidthFrac * gv.dsep;
     const wob = (p) => (nz.n2(p[0] * 0.19, p[1] * 0.19) - 0.5) * 2 * cfg.lines.wobble;
     // tono → ancho: paredes oscuras un juego fino, medias uno ancho, roca iluminada y arena un segundo juego a 70°
-    const wMain = (p) => { const tt = tone(p[0], p[1]); if (tt < 0.13) return 0; const w = minW + (maxW - minW) * Math.pow(Math.max(0, (tt - 0.3) / 0.55), 1.1); return (w + wob(p)) * edge(p[0], p[1]); };
-    const wSec = (p) => { const tt = tone(p[0], p[1]); if (tt < 0.74) return 0; return (minW + (tt - 0.74) * 5 + wob(p)) * edge(p[0], p[1]); };
+    const wMain = (p) => { const tt = tone(p[0], p[1]); const w = minW + (maxW - minW) * Math.pow(Math.max(0, (tt - 0.3) / 0.55), 1.1); return (w + wob(p)) * edge(p[0], p[1]); };
+    const wSec = (p) => { const tt = tone(p[0], p[1]); return (minW + Math.max(0, tt - 0.74) * 5 + wob(p)) * edge(p[0], p[1]); };
+    const mainR = runs(main, 0.19, 0.11, 30), secR = runs(second, 0.76, 0.7, 30);
     function strokes(mul) {
       const c = U.canvas(W, H), x = c.getContext('2d', { willReadFrequently: true });
       x.fillStyle = '#fff';
-      for (const Ln of main) S.drawStroke(x, Ln, (p) => { const w = wMain(p); return w > 0.4 ? Math.max(minW * 0.9, w) * mul : 0; }, 9);
-      for (const Ln of second) S.drawStroke(x, Ln, (p) => { const w = wSec(p); return w > 0.4 ? Math.max(minW * 0.9, w) * mul : 0; }, 7);
+      for (const Ln of mainR) S.drawStroke(x, Ln, (p) => { const w = wMain(p); return w > 0.4 ? Math.max(minW, w) * mul : 0; }, 9);
+      for (const Ln of secR) S.drawStroke(x, Ln, (p) => { const w = wSec(p); return w > 0.4 ? Math.max(minW, w) * mul : 0; }, 8);
       return c;
     }
     const cA = strokes(1), cB = strokes(1.08);
-    // arena del suelo: punteado y trazos cortos casi horizontales
+    // arena del suelo: punteado en rejilla de 9 px con desplazamiento (radio según el tono) y pocos trazos horizontales
+    // cortos que se alargan hacia abajo; el borde superior sigue el ondulado del suelo
     const sC = U.canvas(W, H), sx = sC.getContext('2d', { willReadFrequently: true });
     const r = PBS.rng(cfg.seed + 41);
     sx.fillStyle = '#fff'; sx.strokeStyle = '#fff'; sx.lineCap = 'round';
-    for (let Y = floorY - 30; Y < H; Y += 7) for (let X = 0; X < W; X += 7) {
-      const px = X + r() * 5, py = Y + r() * 5, tt = tone(px, py);
-      if (tt < 0.3 || py < floorY - 20 + r() * 30) continue;
+    for (let Y = floorY - 40; Y < H; Y += 9) for (let X = 0; X < W; X += 9) {
+      const px = X + 1 + r() * 7, py = Y + 1 + r() * 7, tt = tone(px, py), fy = floorAt(px);
+      if (py < fy + (r() - 0.5) * 8) continue;
       const e = edge(px, py); if (r() > e + 0.1) continue;
-      const rad = 1.2 + 0.7 * Math.min(1, (tt - 0.3) / 0.5) + 0.2 * r();
-      if (r() < 0.07 && tt > 0.5) { sx.lineWidth = 2.3; sx.beginPath(); const l = 5 + r() * 7; sx.moveTo(px - l / 2, py); sx.lineTo(px + l / 2, py + (r() - 0.5) * 1.5); sx.stroke(); }
-      else { sx.beginPath(); sx.arc(px, py, rad, 0, Math.PI * 2); sx.fill(); }
+      const depth = Math.max(0, Math.min(1, (py - fy) / 300));
+      if (r() < 0.04 + 0.1 * depth) { sx.lineWidth = 2.3; const l = 6 + 16 * depth + r() * 5; sx.beginPath(); sx.moveTo(px - l / 2, py); sx.lineTo(px + l / 2, py + (r() - 0.5) * 1.2); sx.stroke(); continue; }
+      if (r() > 0.5 + 0.45 * Math.min(1, Math.max(0, (tt - 0.25) / 0.5))) continue;
+      const rad = 1.2 + 0.8 * Math.min(1, Math.max(0, (tt - 0.25) / 0.55)) + 0.15 * r();
+      sx.beginPath(); sx.arc(px, py, rad, 0, Math.PI * 2); sx.fill();
     }
     // figuras de noche: cuerpo = plancha sin tallar, filo de luz, tallas escasas, sombra de contacto
     const figBone = U.canvas(W, H), fb = figBone.getContext('2d', { willReadFrequently: true });
@@ -156,7 +176,7 @@
     const t3 = performance.now();
     return {
       data: U.pack8(W, H, A, Bw, Sd, Fb), W, H, figs,
-      counts: { main: main.length, second: second.length },
+      counts: { main: main.length, second: second.length, mainRuns: mainR.length, secRuns: secR.length },
       timing: { prep: t1 - t0, trace: t2 - t1, draw: t3 - t2 },
     };
   };

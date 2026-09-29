@@ -9,14 +9,16 @@ window.REEL_CONFIG = {
   featuresUrl: '../../shared/audio/features.json',
   audio: { src: '../../shared/assets/audio/punta_ballena.mp3', AUDIO_START_SECONDS: 47.8, fadeIn: 0.4, fadeOut: 1.5, volume: 1 },
   logo: { file: 'logo/02_logo_uvpb_blanco.png', width: 620 },
-  closingAt: 35.0,
+  closingAt: 35.2,
   closing: { y: 300, shadow: 'rgba(10,8,6,0.5)' },
 
   photos: { portezuelo: 'photos/clean/rinconada_limpia.jpg', gruta: 'photos/clean/gruta_limpia.jpg' },
   // negro/blanco de la normalización (percentiles medidos) y retoques clonados [dx,dy,sx,sy,w,h,pluma]
   photoSpec: {
     rinconada: { w: 3030, h: 1710, black: 0.20, white: 0.86, patches: [[2388, 1222, 80, 108, 12, 2290, 1222], [2394, 1318, 70, 44, 12, 2474, 1326], [2522, 1240, 60, 104, 12, 2612, 1240], [2430, 1190, 40, 50, 10, 2330, 1190]] },
-    gruta: { w: 3015, h: 1730, black: 0.13, white: 0.80, patches: [] },
+    gruta: { w: 3015, h: 1730, black: 0.13, white: 0.86, patches: [],
+      // curva propia de la gruta: medios de la pared levantados, arena comprimida (con textura, no papel)
+      curve: [[0, 0.0], [0.05, 0.035], [0.30, 0.36], [0.50, 0.53], [0.75, 0.70], [0.9, 0.77], [1.0, 0.80]] },
   },
 
   // Copias: origen del recorte (px foto) con claves [t, x]; escala; empuje (1 → push) sobre un centro en pantalla
@@ -27,22 +29,30 @@ window.REEL_CONFIG = {
   ],
 
   // Meniscos (exactamente 3). dirDeg: inclinación respecto de la vertical; s0 y v en px de pantalla.
+  // figFront: las figuras de la copia nueva nuclean en la banda detrás de la cresta; tau0/induction: revelado del fondo;
+  // wet: el papel mojado se ve más hondo enseguida (sólo la postal de archivo)
   meniscus: [
-    { t0: -0.9, dirDeg: -5, s0: -40, v: 660, bow: 55, noiseAmp: 40, seed: 1.7 },
-    { t0: 14.25, dirDeg: -12, s0: -90, v: 1150, bow: 60, noiseAmp: 40, seed: 5.3 },
-    { t0: 22.23, dirDeg: 7, s0: -90, v: 960, bow: 50, noiseAmp: 40, seed: 9.1 },
+    { t0: -0.9, dirDeg: -5, s0: -40, v: 660, bow: 80, noiseAmp: 60, seed: 1.7, figFront: 0, tau0: 0.32, induction: 0.03, wet: 0.4 },
+    { t0: 14.25, dirDeg: -12, s0: -90, v: 760, bow: 100, noiseAmp: 60, seed: 5.3, figFront: 1, tau0: 0.55, induction: 0.06, wet: 0 },
+    { t0: 22.23, dirDeg: 7, s0: -90, v: 820, bow: 90, noiseAmp: 60, seed: 9.1, figFront: 1, tau0: 0.55, induction: 0.06, wet: 0 },
   ],
 
-  development: { tau0: 0.55, induction: 0.06, gateFloor: 0.12, bleach: 0.35, gate: [12.8, 15.05], ramp: 0.3 },
+  development: { tau0: 0.55, induction: 0.06, gateFloor: 0.12, gateFloorDev: 0.5, gate: [12.8, 15.05], ramp: 0.3 },
 
   tone: {
     Lp: 0.955,
     livingCurve: [[0, 0.0], [0.05, 0.03], [0.30, 0.22], [0.50, 0.55], [0.75, 0.84], [0.84, 0.93], [1.0, 0.955]],
     hiFrom: '#F2EADB', hiTo: '#F4E6CC', warmBy: 30,
   },
-  burn: { t0: 34.5, t1: 36.0, yFull: 950, yZero: 1250, density: 1.2 },
+  // quemado: tarjeta a mano con borde ancho (140 px) que ondula ±25 px y deriva; llega a pleno antes de que aparezca el texto
+  burn: { t0: 33.6, t1: 35.0, yFull: 870, yZero: 1010, density: 1.2, edgeAmp: 25, drift: 0.012 },
+  grotto: { swashRate: 1.9 },
+  // plata de las figuras: luminancia según la profundidad en pantalla (perspectiva aérea) y desenfoque de la foto a esa distancia
+  figureLook: { yNear: 1800, yFar: 900, Lnear: 0.095, Lfar: 0.225, softNear: 0.8, softFar: 2.0, sailL: 0.30, sailSoft: 2.0 },
+  warmTimes: [0.4, 14.7, 16.4, 22.6, 27, 31],
   rinse: { t0: 12.8, t1: 15.05, drop: 13.1, center: [620, 760], amp: 3, grow: 1.8, wobble: 1.5, deepen: 0.04 },
-  foam: { t0: 29.4, grow: 3.0, band: 34, cell: 2.7, fraction: 0.3, maxCells: 3400, xMin: 2140 },
+  foam: { t0: 29.4, grow: 2.2, shadeT0: 28.6, shadeDur: 2.0, band: 10, cell: 2.0, xMin: 1760, size: [5, 8],
+    bursts: [[29.4, 3], [30.63, 3]], cluster: 70, perCluster: 24, trickle: 240 },
   onsetThreshold: 0.85, onsetGap: 0.4,
   maskBlur: 3,
 
@@ -84,23 +94,23 @@ window.REEL_CONFIG = {
   // Personas y vela. pose: ver src/figures.js. unit: px de foto por unidad de pose (adulto de pie = 100).
   // group: 0 = sigue la τ de su copia; 1 colonos (26,4 s, τ0 1,0); 2 vela (27,3 s); 3 niño I7 (35,8 s, τ0 1,6); 4 = I3 en P1 (1,2 s)
   figures: [
-    { id: 'I1', print: 'P1', group: 0, pose: 'standP', foot: [1760, 1180], size: 'adult', facing: -1, opts: { frontBundle: 1, backHand: [-18.3, 39] } },
+    { id: 'I1', print: 'P1', group: 0, pose: 'standP', foot: [1760, 1180], size: 'adult', facing: -1, opts: { backHand: [-18.3, 39] } },
     { id: 'I2', print: 'P1', group: 0, pose: 'childP', foot: [1812, 1172], size: 'child', facing: -1, opts: { hand: [12, 52] } },
-    { id: 'I3', print: 'P1', group: 4, pose: 'standB', foot: [1990, 965], size: 'adult', facing: 1, opts: { staff: 1 } },
-    { id: 'G1', print: 'P2', group: 0, pose: 'seatGround', foot: [1300, 1668], sizeY: 1700, size: 'adult', facing: 1 },
-    { id: 'G3', print: 'P2', group: 0, pose: 'childCrouch', foot: [1408, 1660], sizeY: 1690, size: 'child', facing: 1 },
-    { id: 'G2', print: 'P2', group: 0, pose: 'standP', foot: [1995, 1690], sizeY: 1715, size: 'adult', facing: -1, rim: 1.6, opts: { frontBundle: 1, backArm: 1 } },
-    { id: 'I3b', print: 'P3', group: 0, pose: 'standB', foot: [1990, 965], size: 'adult', facing: 1, opts: { staff: 1 } },
-    { id: 'I8', print: 'P3', group: 0, pose: 'standP', foot: [2010, 1330], size: 'adult', facing: -1, opts: { backBundle: 1, staffFront: 1 } },
-    { id: 'I5', print: 'P3', group: 0, pose: 'seatRock', foot: [1880, 1360], size: 'adult', facing: 1 },
-    { id: 'I6', print: 'P3', group: 0, pose: 'crouch', foot: [2230, 1520], size: 'adult', facing: -1 },
-    { id: 'I7', print: 'P3', group: 3, pose: 'childP', foot: [2400, 1620], size: 'child', facing: -1 },
-    { id: 'C1', print: 'P3', group: 1, pose: 'colonist', foot: [1790, 905], size: 'adult', facing: 1, opts: { sack: 1 } },
-    { id: 'C2', print: 'P3', group: 1, pose: 'colonist', foot: [1840, 900], size: 'adult', facing: 1, opts: { stick: 1, coat: 1, brim: 12.6 } },
+    { id: 'I3', print: 'P1', group: 4, pose: 'standB', foot: [2060, 1080], size: 'adult', facing: 1, opts: { staff: 1 } },
+    { id: 'G1', print: 'P2', group: 0, pose: 'seatGround', foot: [1330, 1622], sizeY: 1650, size: 'adult', facing: 1 },
+    { id: 'G3', print: 'P2', group: 0, pose: 'childP', foot: [1478, 1614], size: 'child', facing: 1 },
+    { id: 'G2', print: 'P2', group: 0, pose: 'standQ', foot: [1760, 1655], sizeY: 1650, size: 'adult', facing: -1 },
+    { id: 'I3b', print: 'P3', group: 0, pose: 'standB', foot: [2060, 1080], size: 'adult', facing: 1, opts: { staff: 1 } },
+    { id: 'I8', print: 'P3', group: 0, pose: 'standP', foot: [1985, 1302], size: 'adult', facing: -1, opts: { staffFront: 1 } },
+    { id: 'I5', print: 'P3', group: 0, pose: 'seatRock', foot: [1868, 1292], size: 'adult', facing: 1 },
+    { id: 'I6', print: 'P3', group: 0, pose: 'crouch', foot: [2150, 1385], size: 'adult', facing: 1 },
+    { id: 'I7', print: 'P3', group: 3, pose: 'childP', foot: [2230, 1330], size: 'child', facing: -1 },
+    { id: 'C1', print: 'P3', group: 1, pose: 'colonistP', foot: [1830, 862], size: 'adult', facing: 1, opts: { sack: 1 } },
+    { id: 'C2', print: 'P3', group: 1, pose: 'colonistP', foot: [1866, 855], size: 'adult', facing: 1, opts: { stick: 1, coat: 1, brim: 13 } },
     { id: 'S1', print: 'P3', group: 2, pose: 'sail', foot: [2520, 628], size: 'sail', facing: 1 },
   ],
   groups: { 1: { start: 26.4, tau0: 1.0 }, 2: { start: 27.3, tau0: 1.0 }, 3: { start: 35.8, tau0: 1.6 }, 4: { start: 1.2, tau0: 0.5 } },
-  sizeRule: { rinconada: { k: 0.34, y0: 600 }, gruta: { headY: 1460 }, child: 0.68, sailUnit: 0.95 },
+  sizeRule: { rinconada: { k: 0.34, y0: 600 }, gruta: { headY: 1460 }, child: 0.68, sailUnit: 1.05 },
   light: {
     rinconada: { kx: 0.56, ky: 0.27, rim: [1.5, 1.5] },
     gruta: { kx: 0.10, ky: 0.20, rim: [0.4, 1.8] },

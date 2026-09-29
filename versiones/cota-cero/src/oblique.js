@@ -59,10 +59,10 @@ void main(){ o = v; }`;
     const tr = cfg.world.trail;
     const segs = tr.slice(0, -1).map((p, i) => `seg(w, vec2(${p[0].toFixed(1)},${p[1].toFixed(1)}), vec2(${tr[i + 1][0].toFixed(1)},${tr[i + 1][1].toFixed(1)}), acc, best, bs); acc += ${Math.hypot(tr[i + 1][0] - p[0], tr[i + 1][1] - p[1]).toFixed(1)};`).join('\n  ');
     // grutas: (y centro, semiancho m, alto m) — anchos y alturas desparejos; dos juntas forman una hendidura
-    const N = [[176, 7, 6.5], [318, 12.5, 9.5], [343, 6, 5.5], [527, 9, 7.8], [772, 15, 8.8]];
+    const N = [[176, 10, 9], [318, 17, 13], [350, 8, 7.5], [527, 12.5, 11], [772, 20, 12.5]];
     const notches = N.map((q, i) => `nw(w, h, ${q[0].toFixed(1)}, ${q[1].toFixed(1)}, ${q[2].toFixed(1)}, ${(i * 3.7).toFixed(1)}, nC);`).join('\n  ');
     return window.CC_SH.common + `
-uniform sampler2D gb, bake; uniform vec4 ext; uniform vec2 texel; uniform float k, BH;
+uniform sampler2D gb, bake, wallH; uniform vec4 ext; uniform vec2 texel; uniform float k, BH;
 uniform vec3 sunD; uniform vec2 C, Fw, Rv; uniform float f, cz, ybh;
 void seg(vec2 p, vec2 a, vec2 b, float acc, inout float best, inout float bs){
   vec2 ab = b - a; float L = length(ab); float t = clamp(dot(p - a, ab)/(L*L), 0., 1.); float d = length(p - a - ab*t);
@@ -113,27 +113,14 @@ void main(){
   float rock = B.g;
   float shade = clamp(.55 - lam*2.2, 0., 1.);       // 0 = luz rasante en lo alto, 1 = cara oeste en sombra
   float wob = (vnoise(px/9.) - .5)*.7;
-  // dirección de la línea de máxima pendiente en pantalla
-  float gl = max(length(gr), 1e-4);
-  vec2 g2 = -gr/gl;
-  vec2 p0 = proj(w, h), p1 = proj(w + g2*2., h - 2.*gl);
-  vec2 fd = p1 - p0; fd = length(fd) > 1e-4 ? normalize(fd) : vec2(0., 1.);
-  if (fd.y < 0.) fd = -fd;
-  // limitar la inclinación de los trazos a 75–105° de pantalla (casi verticales, como diaclasas)
-  float ang = clamp(atan(fd.y, fd.x), radians(68.), radians(112.));
-  vec2 fdir = vec2(cos(ang), sin(ang));
-  // región empinada (con borde irregular, sin fundido)
-  float steepN = slope + (vnoise(w/9. + 3.) - .5)*10.;
-  float steep = step(33., steepN)*landM;
-  // A: trazos de fractura a lo largo de la pendiente, 13 px, 2,2–5 px según la sombra
-  float hwA = mix(1.1, 2.5, shade) + wob*.5;
-  float fA = strokes(px, fdir, 13., hwA, 1.3, .26)*steep;
-  // B: segundo juego cruzado a 60° solo en la sombra más honda
-  float deep = step(.82, shade)*step(40., steepN);
-  vec2 dB = vec2(cos(ang - radians(60.)), sin(ang - radians(60.)));
-  float fB = strokes(px, dB, 13., 1.15 + wob*.3, 7.1, .42)*deep*steep;
+  // paredes: trazos de fractura trazados en JS (líneas de corriente a lo largo de la pendiente, ver wallHatch)
+  vec4 WH = texture(wallH, uv);
+  float steep = step(.5, WH.g)*landM;
+  float fA = WH.r*landM, fB = 0.;
   // curvas cada 3 m (con nivel de detalle: nunca a menos de 13 px) solo fuera de las paredes
-  float Fh = h/3.;
+  vec2 eu = 5./(ext.zw - ext.xy);
+  float hs = (B.r*2. + texture(bake, bu + vec2(eu.x, 0.)).r + texture(bake, bu - vec2(eu.x, 0.)).r + texture(bake, bu + vec2(0., eu.y)).r + texture(bake, bu - vec2(0., eu.y)).r)/6.;
+  float Fh = hs/3.;
   float fw = max(fwidth(Fh), 1e-5);
   float lod = max(0., log2(fw*13.));
   float L0 = floor(lod), fr = lod - L0;
@@ -154,6 +141,62 @@ void main(){
   o = vec4(granite, grass, trail*(1. - granite), landM);
 }`;
   }
+
+  // Trazos de las paredes empinadas: líneas de corriente equiespaciadas (13 px) a lo largo de la línea de máxima pendiente
+  // proyectada en pantalla, cortadas en tramos de fractura; ancho 2,2–5 px según la sombra; segundo juego a 60° en lo más hondo.
+  OB.wallHatch = function (cfg, terr, cam, gb, W, BH) {
+    const t0 = performance.now();
+    const S = window.CC_STREAM, st = 2, GW = Math.ceil(W / st), GH = Math.ceil(BH / st), k = cam.k;
+    const hv = cfg.views.hachure, az = (hv.sunAz * Math.PI) / 180, el = (hv.sunEl * Math.PI) / 180;
+    const sunD = [Math.sin(az) * Math.cos(el), Math.cos(az) * Math.cos(el), Math.sin(el)];
+    const nz = PBS.makeNoise(cfg.seed + 71);
+    const n = GW * GH, dx = new Float32Array(n), dy = new Float32Array(n), shade = new Float32Array(n), steep = new Uint8Array(n), deep = new Uint8Array(n), dep = new Float32Array(n);
+    const texel = (X, Y) => ((BH - 1 - Y) * W + X) * 4;
+    for (let gy = 0; gy < GH; gy++) for (let gx = 0; gx < GW; gx++) {
+      const X = Math.min(W - 1, gx * st), Y = Math.min(BH - 1, gy * st), j = texel(X, Y), c = gy * GW + gx;
+      const h = gb[j], d = gb[j + 1], wx = gb[j + 2], wy = gb[j + 3];
+      dep[c] = d;
+      if (d < 1 || h < 0.3) continue;
+      const gxh = (terr.h(wx + 2, wy) - terr.h(wx - 2, wy)) / 4, gyh = (terr.h(wx, wy + 2) - terr.h(wx, wy - 2)) / 4, gl2 = Math.hypot(gxh, gyh);
+      const slope = (Math.atan(k * gl2) * 180) / Math.PI;
+      const nn = Math.hypot(k * gxh, k * gyh, 1), lam = (-k * gxh * sunD[0] - k * gyh * sunD[1] + sunD[2]) / nn;
+      // tono: sombra general de la cara oeste, modelado por huecos (más tinta) y lomos (menos), y más oscuro al pie
+      const hsm = (terr.h(wx + 12, wy) + terr.h(wx - 12, wy) + terr.h(wx, wy + 12) + terr.h(wx, wy - 12)) / 4, cav = hsm - h;
+      const sh0 = Math.max(0, Math.min(1, 0.55 - lam * 2.2));
+      shade[c] = Math.max(0, Math.min(1, 0.12 + 0.45 * sh0 + cav * 0.16 + Math.max(0, (24 - h) / 24) * 0.3 + (nz.n2(wx / 40, wy / 40) - 0.5) * 0.3));
+      const sN = slope + (nz.n2(wx / 9, wy / 9) - 0.5) * 10;
+      if (sN < 33 || gl2 < 1e-3) continue;
+      const p0 = cam.project(wx, wy, h), p1 = cam.project(wx - (gxh / gl2) * 2, wy - (gyh / gl2) * 2, h - 2 * gl2);
+      let fx = p1[0] - p0[0], fy = p1[1] - p0[1]; const fl = Math.hypot(fx, fy) || 1; fx /= fl; fy /= fl; if (fy < 0) { fx = -fx; fy = -fy; }
+      const a0 = Math.atan2(fy, fx), ang = Math.PI / 2 + Math.max(-0.26, Math.min(0.26, (a0 - Math.PI / 2) * 0.45));
+      dx[c] = Math.cos(ang); dy[c] = Math.sin(ang); steep[c] = 1;
+      if (shade[c] > 0.74 && sN > 38) deep[c] = 1;
+    }
+    // bordes de oclusión (saltos de profundidad): allí se cortan los trazos
+    for (let gy = 1; gy < GH - 1; gy++) for (let gx = 1; gx < GW - 1; gx++) {
+      const c = gy * GW + gx; if (!steep[c]) continue;
+      for (const o of [1, -1, GW, -GW]) { const q = dep[c + o]; if (q < 1 || Math.abs(q - dep[c]) / dep[c] > 0.03) { steep[c] = 2; break; } }
+    }
+    const bx = U.boxBlur(dx, GW, GH, 3), by = U.boxBlur(dy, GW, GH, 3);
+    const cellAt = (x, y) => Math.min(GH - 1, Math.max(0, Math.floor(y / st))) * GW + Math.min(GW - 1, Math.max(0, Math.floor(x / st)));
+    const fieldA = (x, y) => { const c = cellAt(x, y); if (steep[c] !== 1) return null; return [bx[c], by[c]]; };
+    const rot = (-60 * Math.PI) / 180, cr = Math.cos(rot), sr = Math.sin(rot);
+    const fieldB = (x, y) => { const c = cellAt(x, y); if (steep[c] !== 1 || !deep[c]) return null; return [bx[c] * cr - by[c] * sr, bx[c] * sr + by[c] * cr]; };
+    const A = S.trace({ w: W, h: BH, dsep: 13, dtest: 6.5, step: 2, maxLen: 600, minLen: 16, seedStep: 15, field: fieldA });
+    const Bl = S.trace({ w: W, h: BH, dsep: 13, dtest: 6.5, step: 2, maxLen: 90, minLen: 14, seedStep: 15, field: fieldB });
+    const c = U.canvas(W, BH), x = c.getContext('2d', { willReadFrequently: true });
+    x.fillStyle = '#fff';
+    const r = PBS.rng(cfg.seed + 73);
+    const wob = (p) => (nz.n2(p[0] * 0.21, p[1] * 0.21) - 0.5) * 2 * cfg.lines.wobble;
+    const shAt = (p) => shade[cellAt(p[0], p[1])];
+    // tramos de fractura: largos 26–130 px, huecos 4–9 px
+    const cut = (L, lo, hi) => { const out = []; let i = 0; while (i < L.length - 1) { const len = Math.round((lo + r() * (hi - lo)) / 2); const seg = L.slice(i, i + len + 1); if (seg.length > 4) out.push(seg); i += len + 2 + Math.round(r() * 2.5); } return out; };
+    for (const L of A) for (const sg of cut(L, 26, 130)) S.drawStroke(x, sg, (p) => 2.2 + 2.9 * Math.pow(shAt(p), 1.4) + wob(p), 7);
+    for (const L of Bl) for (const sg of cut(L, 18, 60)) S.drawStroke(x, sg, (p) => 2.3 + wob(p) * 0.5, 5);
+    const ink = U.alpha(c), stp = new Float32Array(W * BH);
+    for (let y = 0; y < BH; y++) for (let xx = 0; xx < W; xx++) stp[y * W + xx] = steep[cellAt(xx, y)] ? 1 : 0;
+    return { ink, steep: stp, n: [A.length, Bl.length], ms: performance.now() - t0 };
+  };
 
   OB.buildLand = function (G, cfg, terr, cam) {
     const gl = G.gl, W = cfg.width, BH = cam.BH, o = cfg.views.oblique;
@@ -197,7 +240,11 @@ void main(){
     gl.drawElements(gl.TRIANGLES, idx.length, gl.UNSIGNED_INT, 0);
     gl.disable(gl.DEPTH_TEST);
     gl.bindVertexArray(null);
+    const gbData = new Float32Array(W * BH * 4);
+    gl.readPixels(0, 0, W, BH, gl.RGBA, gl.FLOAT, gbData);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    const wh = OB.wallHatch(cfg, terr, cam, gbData, W, BH);
+    const wallTex = U.rawTexture(G, U.pack8(W, BH, wh.ink, wh.steep, null, null), W, BH);
     gl.clearColor(0, 0, 0, 0);
     // grabado de la tierra
     const tgt = G.target(W, BH);
@@ -205,9 +252,9 @@ void main(){
     const lp = G.program(landFS(cfg));
     return {
       render(draw) {
-        draw(lp, { gb: gt, bake: terr.bakeTex, ext, texel: [1 / W, 1 / BH], k: cam.k, BH, sunD: [Math.sin(az) * Math.cos(el), Math.cos(az) * Math.cos(el), Math.sin(el)], C: cam.C.slice(0, 2), Fw: cam.F, Rv: cam.R, f: cam.f, cz: cam.C[2], ybh: cam.ybh }, tgt);
+        draw(lp, { gb: gt, bake: terr.bakeTex, wallH: wallTex, ext, texel: [1 / W, 1 / BH], k: cam.k, BH, sunD: [Math.sin(az) * Math.cos(el), Math.cos(az) * Math.cos(el), Math.sin(el)], C: cam.C.slice(0, 2), Fw: cam.F, Rv: cam.R, f: cam.f, cz: cam.C[2], ybh: cam.ybh }, tgt);
         gl.deleteBuffer(vb); gl.deleteBuffer(ib); gl.deleteVertexArray(vao); gl.deleteRenderbuffer(rb); gl.deleteFramebuffer(fb);
-        return { tex: tgt.tex, gbuf: gt, ms: performance.now() - t0 };
+        return { tex: tgt.tex, gbuf: gt, ms: performance.now() - t0, wallMs: wh.ms, wallLines: wh.n };
       },
     };
   };

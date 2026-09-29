@@ -144,7 +144,7 @@
         lum[di] = lum[di] * (1 - aa) + lum[si] * aa;
       }
     }
-    const lut = RV.monotoneLUT(cfg.tone.livingCurve);
+    const lut = RV.monotoneLUT(pc.curve || cfg.tone.livingCurve);
     const bp = pc.black, wp = pc.white;
     // distancias a media resolución
     const hw = Math.ceil(w / 2), hh = Math.ceil(h / 2);

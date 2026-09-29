@@ -10,7 +10,7 @@ window.REEL_CONFIG = {
   audio: { src: '../../shared/assets/audio/punta_ballena.mp3', AUDIO_START_SECONDS: 47.8, fadeIn: 0.4, fadeOut: 1.5, volume: 1 },
   logo: { file: 'logo/01_logo_uvpb_color.png', width: 620 },
   closingAt: 35.0,
-  closing: { y: 290, ink: '#22211F', ink2: '#3A362E', margin: 30, skyFadeFrom: 34.2, skyMin: 0.1 },
+  closing: { y: 290, ink: '#22211F', ink2: '#3A362E', skyFadeFrom: 34.2, clearTo: 884 },
   photos: { grotto: { file: 'photos/clean/gruta_limpia.jpg', crop: [1164, 0, 973, 1730] } },
 
   palette: {
@@ -49,13 +49,13 @@ window.REEL_CONFIG = {
     grotto: { push: [7.6, 15.0, 1.0, 1.03], center: [540, 1100], dsep: 13, work: [540, 960] },
     oblique: {
       // cámara baja sobre la arena de Portezuelo, cerca de la sierra: la pared oeste llena el tercio superior izquierdo
-      cam: [-250, 1315, 2.5], tipX: 690, fovDeg: 50, focal: 2059, k: 1.4,
+      cam: [-250, 1315, 2.3], tipX: 660, fovDeg: 50, focal: 2059, k: 1.4,
       // inclinación: quieta hasta el golpe de 22,23 s y luego lineal (≈1,3 px/cuadro) hasta el encuadre del cierre
-      horizon: [[22.23, 740], [35.0, 1250]], horizonEase: 0.02, bufH: 2460, bufHorizon: 1250, mesh: 512,
+      horizon: [[22.23, 740], [35.0, 1247]], horizonEase: 0.02, bufH: 2440, bufHorizon: 1247, mesh: 512,
       contourStep: 3, near: 120, box: [-330, -200, 700, 1250],
       sky: { spacing: 14, topW: 2.6, clouds: [[360, 70], [700, 60]] },
       sea: { dlog: 0.056, waveAmp: 5, swashM: 3, swellFrom: 160 },
-      echo: { aspect: 2.6, rho0: 10, lambda: 0.3, speed: 0.62, gap: 7, front: 7.5, left: 330 },
+      echo: { aspect: 2.6, rho0: 48, lambda: 0.3, speed: 0.62, gap: 7, front: 0.3, left: 260 },
     },
   },
 
@@ -74,16 +74,16 @@ window.REEL_CONFIG = {
       { id: 'G1', pose: 'elderSeated', foot: [150, 1840], h: 190, facing: 1 },
     ],
     oblique: [
-      { id: 'O4', pose: 'elderSeated', d: 15.5, x: 140, facing: 1, rock: true },
-      { id: 'O1', pose: 'standBundle', d: 14, x: 345, facing: -1 },
-      { id: 'O2', pose: 'childCrouch', d: 14.5, x: 440, facing: -1 },
+      { id: 'O4', pose: 'elderSeated', d: 12.5, x: 150, facing: 1, rock: true },
+      { id: 'O1', pose: 'standBundle', d: 13.5, x: 360, facing: -1 },
+      { id: 'O2', pose: 'childCrouch', d: 14, x: 455, facing: -1 },
       { id: 'O3', pose: 'gather', d: 17.2, x: 585, facing: 1 },
-      { id: 'O5', pose: 'standStaff', d: 18.2, x: 735, facing: -1 },
+      { id: 'O5', pose: 'standStaff', d: 18.0, x: 700, facing: -1 },
       // colonos: tres cuartos, mirando tierra adentro (izquierda); se tallan contorno → núcleo → trama
-      { id: 'C1', pose: 'colonBundle', d: 24.5, x: 900, facing: -1, cut: [24.6, 25.8], order: 'outline' },
+      { id: 'C1', pose: 'colonBundle', d: 24, x: 905, facing: -1, cut: [24.6, 25.8], order: 'outline' },
       { id: 'C2', pose: 'colonStick', d: 24, x: 985, facing: -1, cut: [25.2, 26.4], order: 'outline' },
       // O6 (futuro): contorno a buril, luego la trama en diagonal y el núcleo desde los pies; ≈70 % a los 40 s
-      { id: 'O6', pose: 'childCrouch', d: 12.6, x: 238, facing: 1, cut: [37.8, 40.0], cutEnd: 0.7, order: 'future', clearShadows: true },
+      { id: 'O6', pose: 'childCrouch', d: 12, x: 250, facing: 1, cut: [37.8, 40.0], cutEnd: 0.7, order: 'future', clearShadows: true },
     ],
     boat: { d: 27, x: 1046, cut: [24.6, 25.4] },
     ship: { x: 930, at: 22.23, dur: 0.9, hull: 56 },

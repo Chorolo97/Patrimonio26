@@ -31,15 +31,37 @@
     const band = (X, Y) => { const [x, y] = fr.toWorld(X, Y); return Math.floor(terr.h(x, y) / 25); };
     // hachuras: línea de máxima pendiente (−∇h), cortadas en cada curva de 25 m
     const fall = S.trace({
-      w: W, h: H, dsep: hv.dsep, dtest: hv.dtest, step: hv.step, maxLen: hv.maxLen, minLen: hv.minLen, seedStep: hv.dsep * 1.5,
+      w: W, h: H, dsep: hv.dsep, dtest: hv.dtest, step: hv.step, maxLen: 400, minLen: hv.minLen, seedStep: hv.dsep * 1.5,
       field: (X, Y) => { const [x, y] = fr.toWorld(X, Y); if (terr.h(x, y) < 0.6) return null; const [gx, gy] = grad(X, Y); if (slopeDeg(gx, gy) < hv.minSlopeDeg) return null; return [-gx, gy]; },
-      stop: (X, Y, s) => band(X, Y) !== band(s[0], s[1]),
     });
+    // trazos de hachura de largo muy variable (8–60 px), separados por mellas cortas
+    const rs = PBS.rng(cfg.seed + 19);
+    const fallCut = [];
+    for (const L of fall) {
+      let i = 0;
+      while (i < L.length - 1) {
+        const n = Math.max(3, Math.round((hv.minLen + Math.pow(rs(), 0.7) * (hv.maxLen - hv.minLen)) / hv.step));
+        const seg = L.slice(i, i + n + 1); if (seg.length >= 4) fallCut.push(seg);
+        i += n + 2 + Math.round(rs() * 2);
+      }
+    }
     // trama cruzada en el acantilado (sigue la curva de nivel)
+    const cliffAt = (X, Y) => { const [gx, gy] = grad(X, Y); const [x, y] = fr.toWorld(X, Y); return terr.h(x, y) >= 0.4 && slopeDeg(gx, gy) >= 7 && gx > Math.abs(gy) * 0.6; };
     const cross = S.trace({
-      w: W, h: H, dsep: hv.dsep, dtest: hv.dtest, step: hv.step, maxLen: 260, minLen: 24, seedStep: 8,
+      w: W, h: H, dsep: 8, dtest: 4, step: hv.step, maxLen: 120, minLen: 14, seedStep: 5,
       oriented: true,
-      field: (X, Y) => { const [gx, gy] = grad(X, Y); const [x, y] = fr.toWorld(X, Y); if (terr.h(x, y) < 0.4 || slopeDeg(gx, gy) < 27) return null; return [gy, gx]; },
+      field: (X, Y) => { if (!cliffAt(X, Y)) return null; const [gx, gy] = grad(X, Y); return [gy, gx]; },
+    });
+    // tercer juego (diagonal) en lo más hondo del acantilado
+    const third = S.trace({
+      w: W, h: H, dsep: 10, dtest: 5, step: hv.step, maxLen: 50, minLen: 10, seedStep: 6,
+      oriented: true,
+      field: (X, Y) => { if (!cliffAt(X, Y)) return null; const [gx, gy] = grad(X, Y); const a = Math.atan2(gx, gy) + 0.8; return [Math.cos(a), Math.sin(a)]; },
+    });
+    // noche: fracturas finas a lo largo de la pendiente en el acantilado (la pared queda como un filo claro)
+    const frac = S.trace({
+      w: W, h: H, dsep: 13, dtest: 6, step: hv.step, maxLen: 40, minLen: 10, seedStep: 7,
+      field: (X, Y) => { if (!cliffAt(X, Y)) return null; const [gx, gy] = grad(X, Y); return [-gx, gy]; },
     });
     const t1 = performance.now();
     // sombreado
@@ -52,7 +74,7 @@
       const [gx, gy] = grad(X, Y), sl = slopeDeg(gx, gy), l = lam(gx, gy, sunD);
       // tono por la luz (sol del ESE, 12°): caras al oeste anchas, laderas del este finas
       const k = Math.max(0, Math.min(1, (0.36 - l) / 0.6));
-      return (minW + (maxW - minW) * k) * (0.75 + 0.25 * Math.min(1, sl / hv.slopeFull));
+      return Math.max(2.9, (3.0 + (maxW - 3.0) * k) * (0.82 + 0.18 * Math.min(1, sl / hv.slopeFull)));
     };
     const widthNight = (X, Y) => {
       const [gx, gy] = grad(X, Y), sl = slopeDeg(gx, gy), l = lam(gx, gy, sunN);
@@ -63,19 +85,25 @@
     // ruido fijo de "sangrado" de tinta ±0,35 px
     const nz = PBS.makeNoise(cfg.seed + 11);
     const wob = (p) => (nz.n2(p[0] * 0.21, p[1] * 0.21) - 0.5) * 2 * cfg.lines.wobble;
-    function hatchCanvas(widthFn, crossW) {
+    const segLen = (L) => { let a = 0; for (let i = 1; i < L.length; i++) a += Math.hypot(L[i][0] - L[i - 1][0], L[i][1] - L[i - 1][1]); return a; };
+    function hatchCanvas(widthFn, day) {
       const c = U.canvas(CW, CH), x = c.getContext('2d', { willReadFrequently: true });
       x.scale(os, os); x.fillStyle = '#fff';
-      // tono: ancho primero; por debajo del mínimo, menos trazos (uno de cada dos) al ancho mínimo
-      fall.forEach((L, k) => {
+      // tono: ancho primero; afinado fuerte en las puntas (≈ 40 % del largo)
+      fallCut.forEach((L) => {
         const m = L[Math.floor(L.length / 2)], w0 = widthFn(m[0], m[1]);
         if (w0 < 1.0) return;
-        S.drawStroke(x, L, (p) => { const w = widthFn(p[0], p[1]); return w < 0.8 ? 0 : Math.min(maxW, Math.max(minW, w)) + wob(p); }, 5);
+        S.drawStroke(x, L, (p) => { const w = widthFn(p[0], p[1]); return w < 0.8 ? 0 : Math.min(maxW, Math.max(minW, w)) + wob(p); }, Math.max(4, segLen(L) * 0.4));
       });
-      if (crossW) for (const L of cross) S.drawStroke(x, L, (p) => { const [gx, gy] = grad(p[0], p[1]); const l = lam(gx, gy, sunD); return l < 0.05 ? crossW + wob(p) : 0; }, 10);
+      if (day) {
+        for (const L of cross) S.drawStroke(x, L, (p) => 3.4 + wob(p), 6);
+        for (const L of third) S.drawStroke(x, L, (p) => 2.4 + wob(p), 5);
+      } else {
+        for (const L of frac) S.drawStroke(x, L, (p) => 2.2 + wob(p) * 0.4, Math.max(3, segLen(L) * 0.35));
+      }
       return U.alpha(c);
     }
-    let hachDay = hatchCanvas(widthDay, 2.3), hachNight = hatchCanvas(widthNight, 0);
+    let hachDay = hatchCanvas(widthDay, true), hachNight = hatchCanvas(widthNight, false);
     const t2 = performance.now();
     // arena: rejilla hash de 7 px, radio por tono (≥ 1,2 px)
     const sc = U.canvas(CW, CH), sx = sc.getContext('2d', { willReadFrequently: true });
@@ -89,6 +117,22 @@
       const wet = Math.max(0, 1 - Math.max(0, -terr.D(x, y)) / 22);
       const rad = 1.2 + 0.55 * wet + 0.25 * r();
       sx.beginPath(); sx.arc(px, py, rad, 0, Math.PI * 2); sx.fill();
+    }
+    // plataforma de la punta: 5–8 bloques de 8–14 px con canto firme y dos o tres tallas dentro
+    {
+      const tipS = fr.toScreen(cfg.world.tip[0], cfg.world.tip[1]), placed = [];
+      sx.strokeStyle = '#fff'; sx.lineCap = 'round';
+      for (let tries = 0; tries < 400 && placed.length < 7; tries++) {
+        const a = r() * Math.PI * 2, rr = 6 + r() * 42, bx = tipS[0] + Math.cos(a) * rr, by = tipS[1] + Math.sin(a) * rr * 0.8;
+        const [wx, wy] = fr.toWorld(bx, by); if (terr.h(wx, wy) < 0.2 || terr.D(wx, wy) > -2) continue;
+        const R = 4 + r() * 3; if (placed.some((q) => Math.hypot(q[0] - bx, q[1] - by) < q[2] + R + 3)) continue;
+        placed.push([bx, by, R]);
+        const rot = r() * Math.PI, ry = R * (0.65 + 0.25 * r());
+        sx.lineWidth = 2.3; sx.beginPath(); sx.ellipse(bx, by, R, ry, rot, 0, Math.PI * 2); sx.stroke();
+        sx.save(); sx.beginPath(); sx.ellipse(bx, by, R, ry, rot, 0, Math.PI * 2); sx.clip(); sx.lineWidth = 2.2;
+        for (let k = -1; k <= 1; k++) { const o = k * 4.2; sx.beginPath(); sx.moveTo(bx - R + o, by - R); sx.lineTo(bx + o + R * 0.2, by + R); sx.stroke(); }
+        sx.restore();
+      }
     }
     const sand = U.alpha(sc);
     // pradera: punteado muy ralo y matas de monte bajo (racimos de puntos), fijos
@@ -104,11 +148,12 @@
       if (r() > dens) continue;
       gx2.beginPath(); gx2.arc(px, py, 1.2 + 0.2 * r(), 0, Math.PI * 2); gx2.fill();
     }
-    for (let k = 0; k < 170; k++) { // monte: racimos
-      const px = r() * W, py = r() * H * 0.62, [x, y] = fr.toWorld(px, py);
-      const hh = terr.h(x, y); if (hh < 1.5 || hh > 16 || terr.sandAt(x, y) > 0.1 || terr.rockAt(x, y) > 0.2) continue;
-      if (nzg.fbm(x / 300 + 3, y / 300, 3) < 0.5) continue;
-      const n = 4 + Math.floor(r() * 5);
+    for (let k = 0; k < 900; k++) { // monte: racimos en derivas
+      const px = r() * W, py = r() * H, [x, y] = fr.toWorld(px, py);
+      const hh = terr.h(x, y); if (hh < 1.5 || hh > 30 || terr.sandAt(x, y) > 0.1 || terr.rockAt(x, y) > 0.2) continue;
+      { const [ga, gb] = grad(px, py); if (slopeDeg(ga, gb) > 6) continue; }
+      if (nzg.fbm(x / 300 + 3, y / 300, 3) < 0.47) continue;
+      const n = 5 + Math.floor(r() * 6);
       for (let j = 0; j < n; j++) { const a = r() * 6.28, rr = 2 + r() * 7; gx2.beginPath(); gx2.arc(px + Math.cos(a) * rr, py + Math.sin(a) * rr * 0.7, 1.25 + 0.3 * r(), 0, Math.PI * 2); gx2.fill(); }
     }
     const grass = U.alpha(gc);
@@ -120,7 +165,7 @@
     const acc = [0]; for (let i = 1; i < scr.length; i++) acc.push(acc[i - 1] + Math.hypot(scr[i][0] - scr[i - 1][0], scr[i][1] - scr[i - 1][1]));
     const tot = acc[acc.length - 1];
     let seg = 0;
-    for (let s = 3; s < tot; s += 11) {
+    for (let s = 3; s < tot; s += 12) {
       while (seg < scr.length - 2 && acc[seg + 1] < s) seg++;
       const u = (s - acc[seg]) / Math.max(1e-6, acc[seg + 1] - acc[seg]);
       const a = scr[seg], b = scr[seg + 1];
@@ -129,7 +174,7 @@
       const ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
       const v = Math.round((s / tot) * 250) + 4;
       tx.save(); tx.translate(px, py); tx.rotate(ang); tx.fillStyle = `rgb(${v},${v},${v})`;
-      tx.beginPath(); if (tx.roundRect) tx.roundRect(-3, -1.5, 6, 3, 1.4); else tx.rect(-3, -1.5, 6, 3); tx.fill(); tx.restore();
+      tx.beginPath(); if (tx.roundRect) tx.roundRect(-3.5, -1.75, 7, 3.5, 1.6); else tx.rect(-3.5, -1.75, 7, 3.5); tx.fill(); tx.restore();
     }
     const td = tx.getImageData(0, 0, CW, CH).data;
     const trailA = new Float32Array(CW * CH), trailP = new Float32Array(CW * CH);
@@ -140,7 +185,7 @@
       CW, CH, fr,
       night: U.pack8(CW, CH, hachNight, trailA, sand, trailP),
       day: U.pack8(CW, CH, hachDay, trailA, sand, trailP),
-      counts: { fall: fall.length, cross: cross.length },
+      counts: { fall: fall.length, cut: fallCut.length, cross: cross.length, third: third.length, frac: frac.length },
       timing: { trace: t1 - t0, draw: t2 - t1, sandTrail: t3 - t2 },
     };
   };

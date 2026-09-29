@@ -67,35 +67,31 @@
   // ---------- poses ----------
   const P = {};
 
-  // Adulto de pie de perfil con manto hasta la rodilla. o: {backHand:[x,y], frontBundle, backBundle, staffFront, hair}
+  // Adulto de pie de perfil con manto hasta la rodilla. o: {backHand:[x,y], armLoose, staffFront, hair}
   P.standP = function (ctx, o = {}) {
     // piernas (una apenas adelantada; sin marcha)
     legP(ctx, -2.8, 33, -4.2, 26, -5.6, 4.4);
     legP(ctx, 2.2, 33, 2.8, 26.5, 2.0, 4.4);
-    // manto
-    blob(ctx, [[-1.5, 86.2], [4.6, 83.4], [7.4, 76], [7.8, 64], [7.2, 52], [8.4, 40], [9.6, 30.6], [4, 29.2], [-3.5, 29.8], [-10.2, 31.4], [-10.6, 44], [-9.4, 60], [-8.8, 73], [-6.6, 82.6]]);
+    // manto (el ruedo quiebra el contorno: una punta cae más baja atrás)
+    blob(ctx, [[-1.5, 86.2], [4.6, 83.4], [7.4, 76], [7.8, 64], [7.2, 52], [8.4, 40], [9.6, 31.6], [4, 30.2], [-3.5, 30.8], [-8.6, 29.2], [-11.2, 27.4], [-10.8, 36], [-10.6, 44], [-9.4, 60], [-8.8, 73], [-6.6, 82.6]]);
     // cuello y cabeza
     seg(ctx, 0.2, 80.5, 3.6, 1.4, 86.5, 2.9);
     headP(ctx, 1.6, 93.2, 1, 0.05);
     hairP(ctx, 1.6, 93.2, o.hair || 15, 1, 0.05);
-    if (o.backHand) { // brazo que sale del manto por detrás y baja (p.ej. a la mano del niño)
+    if (o.backHand) { // brazo que sale del manto por delante y baja a la mano del niño
       const [hx, hy] = o.backHand;
-      chain(ctx, [[-6.5, 74, 3.2], [(-6.5 + hx) / 2 - 1.5, (74 + hy) / 2 + 1, 2.6], [hx, hy, 2.0]]);
-      ell(ctx, hx - 0.6, hy - 1.6, 2.3, 2.9, 0.3);
+      const sx = hx < 0 ? -6.5 : 5.2;
+      chain(ctx, [[sx, 74, 3.1], [(sx + hx) / 2 + (hx < 0 ? -1.5 : 1.2), (74 + hy) / 2 + 1, 2.6], [hx, hy, 2.0]]);
+      ell(ctx, hx + (hx < 0 ? -0.6 : 0.4), hy - 1.8, 2.2, 2.9, hx < 0 ? 0.3 : -0.2);
     }
-    if (o.backArm) chain(ctx, [[-7, 70, 3], [-9.3, 58, 2.5], [-9.8, 50.5, 2.1]]);
-    if (o.frontBundle) { // antebrazo que sale del manto por delante y sostiene un atado contra la cadera
-      chain(ctx, [[5.5, 63, 2.9], [9.8, 55.5, 2.3]]);
-      blob(ctx, [[8.4, 56.4], [12.8, 55.2], [15.4, 49], [15, 41], [11.6, 36.4], [7.4, 38], [6.6, 46]]);
-    }
-    if (o.backBundle) { // atado colgado de la mano del lado de atrás
-      chain(ctx, [[-7.5, 70, 3], [-10.4, 58, 2.5], [-11.2, 51.5, 2.1]]);
-      blob(ctx, [[-9.2, 52.6], [-13.6, 52.4], [-16.6, 46], [-16, 38], [-12, 34.6], [-8.4, 37], [-8.2, 45]]);
+    if (o.armLoose) { // brazo suelto, separado del cuerpo por una luz
+      chain(ctx, [[6.4, 76, 3.1], [9.6, 62, 2.6], [10.4, 50, 2.1]]);
+      ell(ctx, 10.5, 47.6, 2.1, 3.0, 0.1);
     }
     if (o.staffFront) { // vara recta sostenida vertical delante del cuerpo
-      stick(ctx, 13.6, -0.5, 13.6, 110, 2.2);
-      chain(ctx, [[6.2, 66, 2.9], [11.4, 63.6, 2.3]]);
-      ell(ctx, 13.4, 64.2, 2.5, 3.1);
+      stick(ctx, 14.2, -0.5, 14.2, 108, 2.1);
+      chain(ctx, [[6.2, 75, 3.0], [11.4, 66.5, 2.5], [13.2, 63.6, 2.2]]);
+      ell(ctx, 13.9, 63.4, 2.4, 3.2);
     }
   };
 
@@ -103,64 +99,90 @@
   P.standB = function (ctx, o = {}) {
     legB(ctx, -4.4, 33, -4.7, 24, -4.9);
     legB(ctx, 4.3, 33, 4.8, 24.5, 5.4);
-    blob(ctx, [[0, 86.6], [7.6, 85], [11.4, 81.6], [12.1, 72], [12.2, 56], [12.8, 42], [13.4, 30.6], [6, 29.4], [0, 30.4], [-6.4, 29.6], [-13, 31.2], [-12.4, 44], [-11.8, 58], [-11.8, 73], [-11, 81.8], [-7.4, 85.2]]);
+    blob(ctx, [[0, 86.6], [7.6, 85], [11.4, 81.6], [12.1, 72], [12.2, 56], [12.8, 42], [13.4, 30.6], [6, 29.4], [0, 30.4], [-6.4, 28.6], [-12.4, 27.2], [-12.4, 44], [-11.8, 58], [-11.8, 73], [-11, 81.8], [-7.4, 85.2]]);
     seg(ctx, 0, 82, 3.8, 0, 87, 3.4);
-    ell(ctx, 0, 93.3, 5.5, 6.7);
-    // pelo que cae sobre la espalda
+    ell(ctx, 0.6, 93.3, 5.5, 6.7, 0.08);
     blob(ctx, [[0, 100.1], [4.9, 98.2], [6.3, 92], [6.6, 83], [5.6, 75.4], [0, 74.2], [-5.6, 75.2], [-6.6, 83], [-6.3, 92], [-4.9, 98.2]]);
+    // mano izquierda visible, suelta junto al manto
+    chain(ctx, [[-11.6, 60, 2.5], [-13.2, 52, 2.1]]); ell(ctx, -13.4, 49.8, 2.0, 2.8);
     if (o.staff) {
-      stick(ctx, 16.2, -0.5, 16.2, 109, 2.2);
-      chain(ctx, [[10.8, 70, 3], [14.2, 61, 2.3]]);
-      ell(ctx, 16, 60.6, 2.5, 3.1);
+      stick(ctx, 16.8, -0.5, 16.8, 109, 2.1);
+      chain(ctx, [[11.2, 72, 3], [14.6, 63, 2.3]]);
+      ell(ctx, 16.6, 62.4, 2.5, 3.1);
     }
   };
 
-  // Mayor sentado sobre una piedra baja, de perfil, inclinado hacia adelante, antebrazos sobre las rodillas
+  // Adulto de tres cuartos, brazos sueltos, apenas girado hacia el agua
+  P.standQ = function (ctx, o = {}) {
+    legB(ctx, -4.8, 33, -5.6, 24, -6.2);
+    legP(ctx, 3.4, 33, 4.6, 26, 4.2, 4.4, 1, 0.7);
+    blob(ctx, [[0.8, 86.6], [7.6, 85], [10.8, 81], [11.2, 70], [10.6, 56], [11.6, 42], [12.6, 31.4], [5.4, 29.8], [-1, 30.4], [-7.2, 28.4], [-12.2, 27.6], [-11.8, 42], [-11, 58], [-11.2, 73], [-10.2, 81.6], [-6.6, 85.4]]);
+    seg(ctx, 0.6, 82, 3.8, 1.0, 87, 3.3);
+    headP(ctx, 1.6, 93.3, 1, 0.02);
+    hairP(ctx, 1.2, 93.3, 16, 1.1, 0.02);
+    // brazos sueltos a ambos lados, con luz entre brazo y manto
+    chain(ctx, [[10.2, 78, 3.1], [13.6, 64, 2.6], [14.4, 52.5, 2.1]]); ell(ctx, 14.5, 50.2, 2.1, 3.0, 0.1);
+    chain(ctx, [[-10, 78, 3.1], [-13.4, 64, 2.6], [-14, 53, 2.1]]); ell(ctx, -14.1, 50.6, 2.1, 3.0, -0.1);
+  };
+
+  // Mayor sentado sobre una piedra baja (perfil): muslo visible casi horizontal, rodillas altas, mano sobre la rodilla,
+  // el manto cae por detrás y forma una espalda legible. Asiento a y = 16 (se apoya en el contorno de la piedra).
   P.seatRock = function (ctx) {
-    // piedra baja: caderas a y≈15, rodillas algo más altas; torso casi erguido, manos sobre las rodillas
-    legP(ctx, 2.5, 15.5, 18.6, 25.6, 19.4, 4.4);
-    legP(ctx, 0.5, 14.8, 16.2, 24.4, 15.6, 4.4);
-    blob(ctx, [[5.6, 50.4], [11.8, 48.6], [14.6, 44.2], [15.2, 38.4], [17.2, 33.4], [21.4, 29.6], [20.8, 25.4], [12.4, 18.8], [4, 13.6], [-4.8, 9.6], [-8.4, 10.6], [-9, 20], [-7, 32], [-3.2, 42], [1.4, 48]]);
-    seg(ctx, 9.6, 47, 3.6, 11.6, 51.2, 3.0);
-    headP(ctx, 13.4, 56.2, 1, 0.22);
-    hairP(ctx, 13.4, 56.2, 13, 1, 0.22);
-    chain(ctx, [[12.6, 41.6, 2.9], [16.8, 34.2, 2.5], [21.4, 30.2, 2.1]]);
-    ell(ctx, 22.8, 29.6, 2.7, 2.3, -0.2);
+    // piernas: muslo, rodilla, canilla vertical hasta el pie en el suelo (luz bajo el muslo)
+    chain(ctx, [[1.5, 19.5, 5.0], [20.5, 23.8, 3.9], [21.6, 12, 3.3], [21.8, 4.2, 2.0]]);
+    seg(ctx, 21.2, 2.2, 1.9, 29.8, 1.2, 1.2); ell(ctx, 21.2, 1.7, 2.3, 1.7);
+    chain(ctx, [[-0.5, 18.5, 5.0], [17.2, 22.4, 3.8], [17.4, 11, 3.2], [17.2, 4.2, 1.95]]);
+    seg(ctx, 16.6, 2.2, 1.9, 25.2, 1.2, 1.2);
+    // torso y manto: la espalda cae hasta la piedra por detrás
+    blob(ctx, [[3.6, 50.6], [9.6, 48.8], [11.6, 42.6], [10.6, 33], [8.4, 24], [5, 17.4], [-3, 15.4], [-10.6, 15.2], [-13.4, 17.2], [-12.2, 26], [-9.6, 36], [-5.6, 44.6], [-1.2, 49.4]]);
+    seg(ctx, 5.6, 48, 3.6, 7.4, 52.6, 3.0);
+    headP(ctx, 8.4, 59.0, 1, 0.14);
+    hairP(ctx, 8.4, 59.0, 14, 1, 0.14);
+    // brazo: codo suelto, mano apoyada sobre la rodilla (muesca de la mano sobre la rodilla)
+    chain(ctx, [[8.2, 45, 2.9], [13.2, 33.4, 2.5], [19.4, 27.4, 2.1]]);
+    ell(ctx, 20.6, 27.2, 2.6, 2.1, -0.3);
   };
 
-  // Mayor sentado en la arena, rodillas altas, vara atravesada sobre las rodillas (perfil)
+  // Mayor sentado en la arena: rodillas altas, manos sobre la rodilla, manto que cae por detrás hasta el suelo
   P.seatGround = function (ctx) {
-    ell(ctx, -3, 8.6, 10.6, 8.6);
-    chain(ctx, [[0, 10, 5.4], [17.4, 26.2, 4.1], [21, 16, 3.5], [24.4, 4.4, 2.0]]);
-    seg(ctx, 23.6, 2.3, 1.9, 32.4, 1.25, 1.2);
-    chain(ctx, [[-2, 9.4, 5], [14.2, 23.6, 3.9], [18.4, 13.6, 3.3], [21, 4.4, 1.9]]);
-    blob(ctx, [[3, 51.2], [9.4, 49.6], [11.6, 42.8], [11.4, 33], [8, 20], [3, 13], [-6, 3.2], [-14.6, 2.2], [-15.2, 14], [-12.4, 30], [-7.6, 43], [-2.6, 49.6]]);
-    seg(ctx, 5, 47, 3.6, 6.8, 51.8, 3.0);
-    headP(ctx, 7.6, 58.2, 1, 0.16);
-    hairP(ctx, 7.6, 58.2, 13.5, 1, 0.16);
-    chain(ctx, [[8, 44, 2.9], [14.6, 34.6, 2.5], [19.4, 30.6, 2.1]]);
-    ell(ctx, 20.2, 30.2, 2.4, 2.7);
-    stick(ctx, -16, 25.6, 29.5, 33.8, 2.1);
+    // piernas: muslo largo hasta la rodilla alta, canilla bajando al pie adelantado; luz entre muslo, canilla y suelo
+    chain(ctx, [[1, 8.6, 5.4], [17.6, 27.6, 4.0], [22.4, 14, 3.4], [24.2, 4.2, 2.0]]);
+    seg(ctx, 23.6, 2.2, 1.9, 32.2, 1.2, 1.2); ell(ctx, 23.4, 1.7, 2.3, 1.7);
+    chain(ctx, [[-1, 8.2, 5.2], [14.6, 25.2, 3.9], [19.8, 12.4, 3.3], [21.2, 4.2, 1.95]]);
+    seg(ctx, 20.6, 2.2, 1.9, 28.8, 1.2, 1.2);
+    // torso casi erguido; el manto cae detrás en una curva hasta el suelo
+    blob(ctx, [[3.4, 51.6], [9.2, 49.8], [10.6, 43], [9.4, 33], [6.6, 21], [4, 10], [-1, 3.6], [-8.6, 0.8], [-12.2, 0.6], [-11.8, 8], [-10.2, 22], [-7.4, 36], [-3, 48.6]]);
+    seg(ctx, 5, 48.6, 3.6, 6.8, 53.2, 3.0);
+    headP(ctx, 7.8, 59.6, 1, 0.12);
+    hairP(ctx, 7.8, 59.6, 14, 1, 0.12);
+    // antebrazo hacia la rodilla, las manos juntas sobre ella
+    chain(ctx, [[7.8, 45.4, 2.9], [11.6, 34.4, 2.5], [17.2, 30.6, 2.1]]);
+    ell(ctx, 18.6, 30.4, 2.5, 2.2, -0.2);
   };
 
-  // Adulto agachado recogiendo (perfil): pies planos, rodillas altas, un brazo hasta el suelo
-  P.crouch = function (ctx, o = {}) {
-    // pierna lejana y cercana
-    chain(ctx, [[-5.4, 18, 6.2], [9.6, 30.4, 4.2], [4.8, 16, 3.4], [2.6, 4.4, 2.0]]);
-    seg(ctx, 1.8, 2.3, 1.9, 10.6, 1.25, 1.2); ell(ctx, 1.9, 1.7, 2.3, 1.7);
-    chain(ctx, [[-4, 16.4, 6], [12.2, 27.6, 4.0], [7.8, 14, 3.3], [6, 4.4, 1.95]]);
-    seg(ctx, 5.2, 2.3, 1.9, 13.8, 1.25, 1.2);
-    // manto sobre la espalda hasta la cadera, ceñido
-    blob(ctx, [[9.4, 46.2], [14.8, 44.8], [16.8, 40], [14.2, 34.6], [7.4, 29.4], [-0.6, 24.4], [-7.4, 17.4], [-11.4, 15.8], [-11.6, 22], [-7.6, 32.4], [0.4, 41.6]]);
-    seg(ctx, 14.2, 43.4, 3.6, 17.4, 46.4, 3.0);
-    headP(ctx, 20.4, 47.2, 1, 0.95);
-    hairP(ctx, 20.4, 47.2, 12, 1, 0.95);
-    // brazo que llega al agua / suelo delante de los pies
-    chain(ctx, [[14.5, 38.6, 3], [19.4, 26.6, 2.6], [21.6, 11.2, 2.1]]);
-    ell(ctx, 22.2, 9.4, 2.5, 3.0, 0.2);
-    // el otro brazo descansa sobre la rodilla
-    chain(ctx, [[11.5, 38, 2.9], [14.6, 32.4, 2.4], [15.4, 30.4, 2.1]]);
-  };
+  // Agachado recogiendo, en cuclillas profundas (perfil): espalda en diagonal, una rodilla adelantada,
+  // el antebrazo baja hasta el agua con la mano marcada; luces entre las piernas y entre brazo y rodilla.
+  // k: 1 adulto; niño con cabeza mayor (o.child)
+  function squat(ctx, o) {
+    const c = o.child ? 1 : 0, hs = c ? 1.3 : 1;
+    // pierna lejana (algo atrás) y cercana (rodilla adelantada)
+    chain(ctx, [[-4.2, 16.6, 5.4], [8.6, 27.8, 3.8], [3.2, 14, 3.2], [1.2, 4.2, 1.95]]);
+    seg(ctx, 0.4, 2.2, 1.9, 8.8, 1.2, 1.2); ell(ctx, 0.2, 1.7, 2.3, 1.7);
+    chain(ctx, [[-2.4, 15.6, 5.4], [13.4, 25.8, 3.8], [9.6, 13, 3.2], [7.8, 4.2, 1.95]]);
+    seg(ctx, 7.0, 2.2, 1.9, 15.4, 1.2, 1.2); ell(ctx, 7.0, 1.7, 2.3, 1.7);
+    // espalda diagonal con el manto; el ruedo cuelga en punta detrás de la cadera
+    blob(ctx, [[12.6, 45.6], [16.4, 43.2], [16.8, 38.4], [13.6, 33], [7.4, 27], [1.6, 20.4], [-3, 14.4], [-7.6, 9.6], [-10.4, 8.8], [-10.2, 14], [-8.8, 20.6], [-4.4, 30], [2.4, 38.6], [7.6, 43.6]], 0.9);
+    seg(ctx, 15.2, 43.4, 3.4 * hs * 0.9, 18.2, 46.4, 2.9 * hs * 0.9);
+    headP(ctx, 21.0, 47.6, hs, 0.72);
+    hairP(ctx, 21.0, 47.6, c ? 9 : 12, hs, 0.72);
+    // brazo que llega al agua delante de la rodilla (luz entre brazo y rodilla)
+    chain(ctx, [[16.4, 40.4, 3.0], [20.8, 26, 2.5], [22.4, 9.6, 2.0]]);
+    ell(ctx, 22.8, 7.0, 2.1, 2.9, 0.15); ell(ctx, 21.2, 7.8, 1.2, 1.6, 0.6); // mano y pulgar
+    // el otro antebrazo descansa sobre la rodilla
+    chain(ctx, [[13.2, 40, 2.8], [14.8, 31.4, 2.4], [17.6, 28.2, 2.0]]);
+    if (o.basket) ell(ctx, -15.5, 2.6, 5.4, 2.8); // atado apoyado en el suelo, al costado
+  }
+  P.crouch = function (ctx, o = {}) { squat(ctx, { ...o, child: 0, basket: 1 }); };
 
   // Niño de pie de perfil (5,5 cabezas; altura del niño = 100)
   P.childP = function (ctx, o = {}) {
@@ -174,64 +196,56 @@
     ctx.save(); ctx.translate(1.6, 90.6); ell(ctx, 0, 0, 7.6, 9.1, -0.1); ell(ctx, 2.6, -5.8, 4.2, 3.4, 0.3); ctx.restore();
     blob(ctx, [[2, 99.6], [-5.2, 98.6], [-8.8, 92], [-9.6, 82], [-6.4, 79.2], [-3, 82.6], [-0.6, 89]]);
     if (o.hand) { const [hx, hy] = o.hand; chain(ctx, [[4.4, 72, 4.0], [(4.4 + hx) / 2 + 1, (72 + hy) / 2 - 2, 3.4], [hx, hy, 2.8]]); ell(ctx, hx + 0.6, hy - 0.8, 3.0, 3.3); }
-    else chain(ctx, [[3.4, 72, 4], [5.6, 58, 3.3], [6.4, 47, 2.8]]);
+    else { chain(ctx, [[5.6, 73, 4], [10.2, 60, 3.3], [11.4, 49, 2.8]]); ell(ctx, 11.6, 46.4, 2.9, 3.6, 0.1); }
   };
 
-  // Niño agachado mirando la arena (altura del niño de pie = 100)
+  // Niño en cuclillas mirando la arena (altura del niño de pie = 100): mismas líneas que el adulto, cabeza mayor
   P.childCrouch = function (ctx) {
-    const s = 1.3;
-    chain(ctx, [[-6.4, 21, 7.2], [11, 35.6, 5.0], [6, 18, 4.2], [3.4, 5.2, 2.5]]);
-    seg(ctx, 2.4, 2.6, 2.4, 13.4, 1.5, 1.6); ell(ctx, 2.4, 2.1, 2.9, 2.1);
-    chain(ctx, [[-4.6, 19.4, 7], [14.2, 32.6, 4.9], [9.4, 16.6, 4.0], [7.4, 5.2, 2.4]]);
-    seg(ctx, 6.4, 2.6, 2.4, 17.2, 1.5, 1.6);
-    blob(ctx, [[8.6, 55], [16.4, 52.4], [19.2, 45], [16.6, 37.6], [8, 33], [-2.4, 27], [-11.6, 16], [-15, 17.6], [-13.4, 30], [-7, 42], [1, 51.4]]);
-    seg(ctx, 15.6, 50.6, 4.4, 19.6, 55, 3.8);
-    ctx.save(); ctx.translate(23.6, 57.2); ctx.rotate(-0.9); ell(ctx, 0, 0, 7.6, 9.1, -0.1); ell(ctx, 2.6, -5.8, 4.2, 3.4, 0.3); ctx.restore();
-    ctx.save(); ctx.translate(23.6, 57.2); ctx.rotate(-0.9); blob(ctx, [[2, 9.0], [-5.2, 8.0], [-8.8, 1.4], [-9.6, -8.6], [-6.4, -11.4], [-3, -8], [-0.6, -1.6]]); ctx.restore();
-    chain(ctx, [[16.6, 44.6, 3.6], [22.6, 30.6, 3.2], [24.4, 14.4, 2.7]]);
-    ell(ctx, 25, 12.4, 3.1, 3.6, 0.2);
-    chain(ctx, [[13, 44, 3.5], [18.4, 33, 3.0], [21.2, 22.6, 2.6]]);
+    ctx.save(); ctx.scale(1.28, 1.28); squat(ctx, { child: 1 }); ctx.restore();
   };
 
-  // Colono de espaldas: sombrero de ala ancha, chaqueta, calzón y botas. o: {sack, stick, coat}
-  P.colonist = function (ctx, o = {}) {
-    legB(ctx, -4.5, 50, -4.8, 26, -5.0, 1, 1);
-    legB(ctx, 4.5, 50, 5.1, 26.5, 5.6, 1, 1);
-    // calzón hasta la rodilla (más ancho que la bota)
-    blob(ctx, [[-9.4, 52], [9.4, 52], [9.8, 40], [9.2, 29.4], [6.6, 27.4], [2.2, 29], [0, 38], [-2.2, 29], [-6.6, 27.4], [-9.4, 29.4], [-9.8, 40]]);
-    const hem = o.coat ? 38 : 47.5;
-    blob(ctx, [[0, 85.6], [7.6, 84.4], [11.2, 82.2], [11.2, 72], [10.6, 60], [11.6, hem], [0, hem - 1.2], [-11.6, hem], [-10.6, 60], [-11.2, 72], [-11.2, 82.2], [-7.6, 84.4]], 0.7);
-    seg(ctx, 0, 83, 3.4, 0, 87.6, 3.0);
-    ell(ctx, 0, 93.0, 5.3, 6.5);
-    // sombrero: ala ≥ 1,8 × ancho de cabeza, copa redondeada
-    const brim = o.brim || 11.4;
-    ell(ctx, 0, 97.2, brim, 2.0);
-    blob(ctx, [[-5.4, 97.4], [-5.0, 101.8], [-2.6, 103.6], [2.6, 103.6], [5.0, 101.8], [5.4, 97.4]], 0.6);
+  // Colono de perfil: sombrero de ala ancha, chaqueta, calzón y botas. o: {sack, stick, coat, brim}
+  P.colonistP = function (ctx, o = {}) {
+    // botas y calzón
+    chain(ctx, [[-2.2, 50, 4.6], [-4.8, 27, 3.8], [-6.6, 14, 3.4], [-7.6, 4.2, 2.9]]);
+    seg(ctx, -8.4, 2.4, 2.4, 0.6, 1.4, 1.5); ell(ctx, -8.2, 2.0, 2.9, 2.0);
+    chain(ctx, [[2.4, 50, 4.6], [4.4, 27, 3.8], [4.6, 14, 3.4], [4.8, 4.2, 2.9]]);
+    seg(ctx, 4.0, 2.4, 2.4, 13.4, 1.4, 1.5); ell(ctx, 4.2, 2.0, 2.9, 2.0);
+    // chaqueta (o casaca larga) de hombros a cadera, recta
+    const hem = o.coat ? 36 : 45;
+    blob(ctx, [[-1, 85.4], [5.6, 83.6], [8.2, 77], [8.2, 64], [8.8, hem + 2], [9.4, hem], [-9.6, hem], [-9.0, hem + 2], [-8.6, 64], [-8.8, 77], [-6.6, 83.8]], 0.6);
+    seg(ctx, 0.2, 82, 3.4, 0.8, 87.4, 3.0);
+    headP(ctx, 1.2, 93.0, 0.97, 0.03);
+    // sombrero: ala ancha (≥ 1,8 × la cabeza) y copa baja
+    const brim = o.brim || 12.4;
+    ell(ctx, 1.4, 97.8, brim, 1.7, -0.03);
+    blob(ctx, [[-4.6, 98.4], [-4.4, 102.6], [-2.0, 104.4], [4.2, 104.4], [6.4, 102.6], [6.6, 98.4]], 0.6);
     // brazos
     if (o.sack) {
-      chain(ctx, [[-11, 80, 3.2], [-12.3, 66, 2.8], [-12.6, 53.5, 2.4]]); ell(ctx, -12.7, 51, 2.4, 3.0);
-      chain(ctx, [[10.6, 80, 3.2], [15.2, 71, 2.8], [11.6, 84.2, 2.4]]);
-      blob(ctx, [[3, 86.8], [8.6, 92.4], [15.8, 92.4], [19.8, 87.4], [17.6, 81], [11, 81.6]]);
+      // brazo atrás sube a sujetar la bolsa sobre el hombro; la bolsa asoma por detrás de la espalda
+      chain(ctx, [[3, 80, 3.1], [6.6, 72.6, 2.6], [4.4, 86.0, 2.2]]);
+      blob(ctx, [[3.4, 88.4], [-2.6, 89.6], [-9.6, 85.0], [-13.4, 78.6], [-12.6, 74.2], [-8.4, 76.2], [-2.4, 82.4]]);
+      chain(ctx, [[5.4, 79, 3.1], [7.8, 65, 2.6], [8.6, 54, 2.2]]); ell(ctx, 8.8, 51.6, 2.2, 2.9);
     } else {
-      chain(ctx, [[-11, 80, 3.2], [-12.3, 66, 2.8], [-12.6, 53.5, 2.4]]); ell(ctx, -12.7, 51, 2.4, 3.0);
-      chain(ctx, [[10.8, 80, 3.2], [14.6, 66, 2.8], [16.6, 55, 2.4]]); ell(ctx, 16.8, 53.2, 2.4, 3.0);
+      chain(ctx, [[-4.4, 79, 3.1], [-7.4, 65, 2.6], [-7.6, 54, 2.2]]); ell(ctx, -7.7, 51.6, 2.2, 2.9);
+      chain(ctx, [[5.4, 79, 3.1], [10.6, 67, 2.6], [15.4, 60.4, 2.2]]); ell(ctx, 16.2, 59.6, 2.2, 2.8);
     }
-    if (o.stick) stick(ctx, 17.0, 58.5, 21.4, -0.4, 2.3);
+    if (o.stick) stick(ctx, 16.6, 62.5, 18.2, -0.4, 2.1);
   };
 
-  // Vela pequeña lejana (unidades ≈ px de foto; altura total ≈ 22)
+  // Vela pequeña lejana (unidades ≈ px de foto; altura total ≈ 26)
   P.sail = function (ctx) {
-    blob(ctx, [[-8.6, 1.3], [9.2, 1.7], [7.2, -0.9], [-6.8, -1.0]], 0.2);
-    stick(ctx, 0.6, 1, 0.9, 13, 1.0);
-    // vela latina: una antena inclinada y un paño triangular
-    stick(ctx, -5.5, 5.2, 7.2, 22.5, 0.9);
-    ctx.beginPath(); ctx.moveTo(-4.8, 5.8); ctx.lineTo(6.8, 21.8); ctx.quadraticCurveTo(8.8, 11, 7.6, 2.6); ctx.closePath(); ctx.fill();
+    blob(ctx, [[-9.6, 1.6], [10.2, 2.0], [8.0, -1.1], [-7.6, -1.2]], 0.2);
+    stick(ctx, 0.6, 1, 1.2, 15, 1.1);
+    // vela latina: una antena inclinada y un paño triangular algo panzón
+    stick(ctx, -6.2, 5.6, 8.0, 26.0, 1.0);
+    ctx.beginPath(); ctx.moveTo(-5.4, 6.2); ctx.lineTo(7.6, 25.4); ctx.quadraticCurveTo(10.6, 12.5, 8.6, 2.8); ctx.closePath(); ctx.fill();
   };
 
   // metadatos por pose: extensión del contacto con el suelo (unidades) para la sombra de contacto
   const CONTACT = {
-    standP: [-9, 12], standB: [-8.5, 9.5], seatRock: [-9, 26], seatGround: [-12, 30], crouch: [-9, 15],
-    childP: [-9, 11], childCrouch: [-12, 19], colonist: [-9.5, 10], sail: [0, 0],
+    standP: [-9, 12], standB: [-8.5, 9.5], standQ: [-9, 10], seatRock: [14, 31], seatGround: [-17, 33], crouch: [-20, 17],
+    childP: [-9, 11], childCrouch: [-13, 21], colonistP: [-9.5, 12], sail: [0, 0],
   };
 
   RV.POSES = P;
@@ -245,70 +259,84 @@
   };
 
   /*
-   * Construye el atlas de figuras de una copia.
-   * figs: [{id, pose, foot:[x,y], unit (px de foto por unidad), facing (+1 derecha, −1 izquierda), group (0 = τ de la copia, 1..3 grupos con inicio propio), opts}]
-   * light: {kx, ky} proyección de la sombra (desplazamiento por unidad de altura), rim: [dx,dy] hacia la luz.
-   * Devuelve {A: ImageData, B: ImageData|null, boxA, boxB} con R cobertura, G sombra (proyectada+contacto), B borde iluminado, A grupo.
+   * Construye el atlas de figuras de una copia (px de foto × S).
+   * figs: [{pose, foot:[x,y], unit, facing, group, opts, L (luminancia de la plata a esa profundidad), soft (desenfoque en px de foto)}]
+   * light: {kx, ky} proyección de la sombra por unidad de altura; rim: [dx,dy] dirección opuesta a la luz (modelado).
+   * Canales: R cobertura (antialias + desenfoque de la profundidad), G densidad de sombra (proyectada + contacto),
+   *          B luminancia propia de la figura /0,4 (perspectiva aérea + lado iluminado), A núcleo (orden de nucleación).
+   * Devuelve {A, B, boxA, boxB, groups:{g:[x0,y0,x1,y1]}}: A = figuras que siguen la τ de la copia, B = grupos con inicio propio.
    */
   RV.buildFigureAtlas = function (figs, light, S = 2) {
-    const out = {};
+    const out = { groups: {} };
     for (const part of ['A', 'B']) {
       const list = figs.filter((f) => (part === 'A' ? !f.group : !!f.group));
       if (!list.length) { out[part] = null; continue; }
-      // caja en px de foto
       let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+      const ext = (f) => {
+        const u = f.unit, h = (f.pose === 'sail' ? 30 : 112) * u, w = (f.pose === 'sail' ? 14 : 48) * u;
+        return [f.foot[0] - w - 8, f.foot[1] - h - 8, f.foot[0] + w + Math.max(0, light.kx) * h + 10, f.foot[1] + light.ky * h + (f.pose === 'sail' ? 14 : 12)];
+      };
       for (const f of list) {
-        const u = f.unit, h = (f.pose === 'sail' ? 24 : 112) * u;
-        const w = (f.pose === 'sail' ? 12 : 45) * u;
-        const shx = Math.max(0, light.kx) * h, shy = light.ky * h;
-        x0 = Math.min(x0, f.foot[0] - w - 6); x1 = Math.max(x1, f.foot[0] + w + shx + 8);
-        y0 = Math.min(y0, f.foot[1] - h - 6); y1 = Math.max(y1, f.foot[1] + shy + 10);
+        const e = ext(f);
+        x0 = Math.min(x0, e[0]); y0 = Math.min(y0, e[1]); x1 = Math.max(x1, e[2]); y1 = Math.max(y1, e[3]);
+        if (f.group) { const g = out.groups[f.group] || [1e9, 1e9, -1e9, -1e9]; out.groups[f.group] = [Math.min(g[0], e[0]), Math.min(g[1], e[1]), Math.max(g[2], e[2]), Math.max(g[3], e[3])]; }
       }
       x0 = Math.floor(x0); y0 = Math.floor(y0); x1 = Math.ceil(x1); y1 = Math.ceil(y1);
       const W = Math.ceil((x1 - x0) * S), H = Math.ceil((y1 - y0) * S);
-      const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'); g.fillStyle = '#fff'; g.strokeStyle = '#fff'; return [c, g]; };
-      const [cCov, gCov] = mk(), [cCast, gCast] = mk(), [cCon, gCon] = mk(), [cRim, gRim] = mk(), [cId, gId] = mk();
+      const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'); g.fillStyle = '#fff'; return [c, g]; };
+      const [cCov, gCov] = mk(), [cSh, gSh] = mk(), [cLum, gLum] = mk(), [cLit, gLit] = mk(), [cCore, gCore] = mk(), [cTmp, gTmp] = mk();
+      const rl = Math.hypot(light.rim[0], light.rim[1]) || 1, rdx = light.rim[0] / rl, rdy = light.rim[1] / rl;
+      const blurDraw = (dst, src, px, alpha = 1) => { dst.save(); dst.filter = px > 0.05 ? `blur(${px}px)` : 'none'; dst.globalAlpha = alpha; dst.drawImage(src, 0, 0); dst.restore(); };
+      const tmp = (fn) => { gTmp.save(); gTmp.setTransform(1, 0, 0, 1, 0, 0); gTmp.globalCompositeOperation = 'source-over'; gTmp.clearRect(0, 0, W, H); gTmp.fillStyle = '#fff'; fn(gTmp); gTmp.restore(); return cTmp; };
       for (const f of list) {
         const fx = (f.foot[0] - x0) * S, fy = (f.foot[1] - y0) * S, s = f.unit * S, fa = f.facing || 1;
-        // figura
-        RV.drawPose(gCov, f, [fa * s, 0, 0, -s, fx, fy]);
-        // sombra proyectada sobre el suelo
-        if (f.pose !== 'sail') RV.drawPose(gCast, f, [fa * s, 0, light.kx * s, light.ky * s, fx, fy]);
-        // sombra de contacto: elipse 1,4× el apoyo
-        const c = CONTACT[f.pose] || [-8, 8];
-        const cx0 = c[0] * fa, cx1 = c[1] * fa, cxm = (cx0 + cx1) / 2, hw = Math.abs(cx1 - cx0) * 0.62;
-        if (hw > 0) { gCon.beginPath(); gCon.ellipse(fx + cxm * s, fy + 0.6 * s, hw * s, Math.max(1.4 * S, hw * 0.15 * s), 0, 0, Math.PI * 2); gCon.fill(); }
-        // grupo (rectángulo dilatado, los grupos están lejos entre sí)
-        if (f.group) {
-          const h = (f.pose === 'sail' ? 26 : 115) * s, w = (f.pose === 'sail' ? 14 : 48) * s;
-          const gv = (f.slot || 1) * 60; gId.fillStyle = `rgb(${gv},${gv},${gv})`;
-          gId.fillRect(fx - w, fy - h, 2 * w + Math.max(0, light.kx) * h, h + light.ky * h + 12 * S);
+        const M = [fa * s, 0, 0, -s, fx, fy];
+        const sail = f.pose === 'sail';
+        // cobertura con el desenfoque de la foto a esa profundidad
+        blurDraw(gCov, tmp((g) => RV.drawPose(g, f, M)), (f.soft || 0.5) * S);
+        // luminancia propia (gris uniforme, dilatado por el desenfoque para que el borde no tome ceros)
+        const Lv = Math.round(PBS.clamp((f.L || 0.1) / 0.4, 0, 1) * 255);
+        gLum.save(); gLum.filter = `blur(${3 * S}px)`; const c1 = tmp((g) => { g.fillStyle = `rgb(${Lv},${Lv},${Lv})`; RV.drawPose(g, f, M); });
+        gLum.drawImage(c1, 0, 0); gLum.drawImage(c1, 0, 0); gLum.drawImage(c1, 0, 0); gLum.restore();
+        // lado iluminado: la figura menos la figura corrida en dirección opuesta a la luz (≈ 25 % del ancho del cuerpo)
+        const dsh = (sail ? 2.5 : 5.5) * s;
+        const lit = tmp((g) => { RV.drawPose(g, f, M); g.globalCompositeOperation = 'destination-out'; RV.drawPose(g, f, [M[0], 0, 0, M[3], fx + rdx * dsh, fy + rdy * dsh]); });
+        blurDraw(gLit, lit, 1.6 * s);
+        // núcleo: cobertura muy desenfocada (el torso y la cabeza nuclean antes que los bordes y las extremidades)
+        blurDraw(gCore, tmp((g) => RV.drawPose(g, f, M)), 4.5 * s);
+        if (sail) {
+          // reflejo: un trazo corto y oscuro bajo el casco
+          gSh.save(); gSh.filter = `blur(${0.8 * S}px)`; gSh.globalAlpha = 0.4; gSh.fillRect(fx - 1.2 * s, fy + 1.5 * s, 2.2 * s, 9 * s); gSh.restore();
+          continue;
         }
+        // sombra proyectada: pegada a los pies, se aclara y ablanda con la distancia
+        const hgt = 100 * s;
+        const cast = tmp((g) => {
+          RV.drawPose(g, f, [fa * s, 0, light.kx * s, light.ky * s, fx, fy]);
+          g.globalCompositeOperation = 'destination-in';
+          const gr = g.createLinearGradient(fx, fy, fx + light.kx * hgt, fy + light.ky * hgt);
+          gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,255,255,0.62)'); gr.addColorStop(1, 'rgba(255,255,255,0.22)');
+          g.fillStyle = gr; g.fillRect(0, 0, W, H);
+        });
+        blurDraw(gSh, cast, 1.2 * S + 0.012 * hgt, 0.42);
+        // oclusión de contacto: banda aplanada bajo el apoyo (+0,6 D) y un halo oscuro amplio (+0,2 D)
+        const c = CONTACT[f.pose] || [-8, 8];
+        const cx0 = c[0] * fa, cx1 = c[1] * fa, cxm = (cx0 + cx1) / 2, hw = Math.abs(cx1 - cx0) * 0.55;
+        const con = tmp((g) => { g.beginPath(); g.ellipse(fx + cxm * s, fy + 0.3 * s, hw * s * 1.05, Math.max(1.1 * S, 1.1 * s), 0, 0, Math.PI * 2); g.fill(); });
+        blurDraw(gSh, con, 0.9 * S, 0.6);
+        const amb = tmp((g) => { g.beginPath(); g.ellipse(fx + cxm * s, fy + 0.8 * s, hw * s * 1.6, Math.max(2.5 * S, 3.2 * s), 0, 0, Math.PI * 2); g.fill(); });
+        blurDraw(gSh, amb, 2.5 * S, 0.22);
       }
-      // borde iluminado: por figura, cobertura menos la cobertura desplazada hacia la luz
-      const [cTmp, gTmp] = mk();
-      for (const f of list) {
-        const fx = (f.foot[0] - x0) * S, fy = (f.foot[1] - y0) * S, s = f.unit * S, fa = f.facing || 1, k = f.rim || 1;
-        gTmp.globalCompositeOperation = 'source-over'; gTmp.clearRect(0, 0, W, H);
-        RV.drawPose(gTmp, f, [fa * s, 0, 0, -s, fx, fy]);
-        gTmp.globalCompositeOperation = 'destination-out';
-        RV.drawPose(gTmp, f, [fa * s, 0, 0, -s, fx + light.rim[0] * S * k, fy + light.rim[1] * S * k]);
-        gRim.drawImage(cTmp, 0, 0);
-      }
-      // desenfoques
-      const blurred = (src, px) => { const [c, g] = mk(); g.filter = `blur(${px}px)`; g.drawImage(src, 0, 0); return g.getImageData(0, 0, W, H).data; };
-      const cov = blurred(cCov, 0.55 * S);
-      const cast = blurred(cCast, 4 * S);
-      const con = blurred(cCon, 3 * S);
-      const rim = blurred(cRim, 0.5 * S);
-      const id = gId.getImageData(0, 0, W, H).data;
+      const cov = gCov.getImageData(0, 0, W, H).data, sh = gSh.getImageData(0, 0, W, H).data, lum = gLum.getImageData(0, 0, W, H).data;
+      const lit = gLit.getImageData(0, 0, W, H).data, core = gCore.getImageData(0, 0, W, H).data;
       const img = new ImageData(W, H), d = img.data;
       for (let i = 0; i < W * H; i++) {
         const k = i * 4;
         d[k] = cov[k + 3];
-        d[k + 1] = Math.min(255, (0.30 * cast[k + 3] + 0.55 * con[k + 3]) / 0.85);
-        d[k + 2] = rim[k + 3];
-        d[k + 3] = part === 'B' ? id[k] : 0;
+        d[k + 1] = sh[k + 3];
+        const Lb = lum[k + 3] > 0 ? lum[k] : 64;
+        d[k + 2] = Math.min(255, Lb + Math.round((lit[k + 3] / 255) * (0.055 / 0.4) * 255));
+        d[k + 3] = Math.min(255, Math.round(core[k + 3] * 1.35));
       }
       out[part] = img;
       out['box' + part] = [x0, y0, x1 - x0, y1 - y0];

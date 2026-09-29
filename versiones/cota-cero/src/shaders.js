@@ -35,6 +35,11 @@ float ripple(float r, float ti, float A){
   return A*exp(-dt/2.2)*sin(x/9.)*exp(-(x*x)/(28.*28.));
 }
 
+float rgap(float r, float ti, float A){
+  float dt = t - ti; if (dt <= 0. || dt > 7.) return 0.;
+  float hw = (A > 5. ? 5.8 : 2.4)*exp(-dt/5.);
+  return lineCov(abs(r - 170.*dt), hw)*step(1.1, hw);
+}
 void main(){
   vec2 px = pxOf(uv);
   vec2 P = tipPx + (px - tipPx)/fr.w;              // px del cuadro a zoom 1
@@ -59,24 +64,32 @@ void main(){
     float rip = ripple(rP, on0.x, am0.x) + ripple(rP, on0.y, am0.y) + ripple(rP, on0.z, am0.z) + ripple(rP, on0.w, am0.w)
               + ripple(rP, on1.x, am1.x) + ripple(rP, on1.y, am1.y) + ripple(rP, on1.z, am1.z) + ripple(rP, on1.w, am1.w);
     psi = (-w.y + wave + jit)/Delta + rip/14.;
-    seaHW = (1.25 + .2*vnoise(w/90.) + wob*.5)*wmul;
+    seaHW = (mix(1.25, 1.12, day) + .15*vnoise(w/90.) + wob*.5)*wmul;
   }
+  float rP2 = length(P - tipPx);
+  float onGap = day > .5 ? max(max(max(rgap(rP2, on0.x, am0.x), rgap(rP2, on0.y, am0.y)), max(rgap(rP2, on0.z, am0.z), rgap(rP2, on0.w, am0.w))),
+                              max(max(rgap(rP2, on1.x, am1.x), rgap(rP2, on1.y, am1.y)), max(rgap(rP2, on1.z, am1.z), rgap(rP2, on1.w, am1.w)))) : 0.;
   float seaL = lineCov(isoDist(psi), seaHW);
   seaL *= smoothstep(3.5, 7.5, Dpx);               // la tinta del mar se detiene antes de la costa
 
   // ---- espuma: anillos = isolíneas de la distancia a la costa ----
   float dTip = length(w - vec2(${'${TIPX}'}, ${'${TIPY}'}));
-  float Dmax = 150.*(.16 + .84*exp(-dTip/480.))*ringOpen;
+  float Dmax = 150.*(.16 + .84*exp(-dTip/480.))*mix(.62, 1., ringOpen);
   float phi = (150./11.)*log((25. + 11.*D/150.)/25.);
   float drift = S*.42;
   float ringD = isoDist(phi - drift);
-  float ringA = smoothstep(4., 9., D)*(1. - smoothstep(Dmax*.62, Dmax, D))*step(.001, ringOpen);
+  float ringA = step(4., D)*step(D, Dmax);
+  float ringTaper = 1. - smoothstep(Dmax*.55, Dmax, D);
   float edgeF = mix(1./26., 1./9., cen);
   float lace = 0.;
   if (day > .5 && D > 0. && D < 160.) lace = (vnoise(px*edgeF) - .5)*1.8;
-  float ringHW = mix(1.15, 1.9, day)*(.85 + .35*low) + day*lace*.5;
-  float ring = lineCov(ringD, ringHW)*ringA;
-  float coast = lineCov(abs(Dpx), 1.3*wmul + wob*.4);   // cota cero
+  float ringHW = mix(1.15, 2.8, day)*(.85 + .35*low) + day*lace*.5;
+  float ring = lineCov(ringD, ringHW*ringTaper)*ringA;
+  // cota cero: de noche un corte de espuma de 5–6 px con borde de encaje roto hacia el mar; de día la línea de agua en tinta
+  float laceC = (vnoise(px*mix(1./10., 1./6., cen)) - .5)*2.;
+  float coastN = max(lineCov(abs(Dpx - .6), 1.7*wmul + wob*.3), step(1.5, Dpx)*step(Dpx, 4.2 + 2.2*laceC)*step(.34, vnoise(px/7. + 3.)));
+  float cliffRim = smoothstep(.4, .7, texture(bake, bu + vec2(.0022, 0.)).g)*lineCov(abs(Dpx + .4), 2.)*step(abs(Dpx), 6.);
+  float coast = day > .5 ? lineCov(abs(Dpx), 1.3*wmul + wob*.4) : max(coastN, cliffRim);
 
   // ---- tierra ----
   float land = smoothstep(-.05, .15, h);
@@ -85,15 +98,21 @@ void main(){
   float Lr = floor(F + .5);
   float major = 1. - step(.5, abs(mod(Lr, 5.)));
   // curvas: menores (5 m) solo donde el terreno es suave; en laderas con hachuras quedan las mayores (25 m)
-  float cHW = (1.15 + .45*major)*wmul + wob*.5;
-  float minorK = mix(1. - smoothstep(.018, .034, fwF), 1., major);
+  float cHW = (mix(1.15, 1.3, day) + .45*major)*wmul + wob*.5;
+  // en las laderas con hachuras no hay curvas (ni las mayores): la masa del relieve la llevan las hachuras
+  float minorK = mix(1. - smoothstep(.018, .034, fwF), 1. - smoothstep(.03, .05, fwF), major);
   float kW = minorK * (1. - smoothstep(.12, .19, fwF)) * (1. - smoothstep(.45, .8, rock));
   float cont = lineCov(isoDist(F), cHW*kW - (1. - kW)*.6)*step(.5, Lr)*land;
+  // lomas tierra adentro: curvas intermedias (2,5 m) donde el terreno es bajo y suave, para que la pradera quede grabada
+  float lomK = smoothstep(1000., 1350., w.y)*(1. - smoothstep(22., 30., h))*(1. - smoothstep(.02, .035, fwF))*(1. - rock);
+  float Fh2 = h/2.5;
+  float half2 = step(.5, abs(mod(floor(Fh2 + .5), 2.)));   // solo las impares (las pares ya son curvas de 5 m)
+  cont = max(cont, lineCov(isoDist(Fh2), (1.1 + .15*day)*wmul*lomK + wob*.4 - (1. - lomK)*1.2)*half2*step(1.5, Fh2)*land);
   float rev = A.b;
   cont *= smoothstep(rev, rev + .05, t)*landOn;
   float bandOn = smoothstep(h - 2., h + 2., E)*landOn;
   float hachC = Hc.r*bandOn*land;
-  float sandC = Hc.b*land*smoothstep(-1., 1., E)*landOn;
+  float sandC = Hc.b*step(-2., h);                  // la arena se corta junto con la costa, desde el cuadro 0
   float trailC = Hc.g*step(Hc.a, trailProg + .001)*step(.001, trailProg);
 
   vec3 col;
@@ -107,9 +126,9 @@ void main(){
   } else {
     col = cPaper*(1. + grainAmt*tooth(px))*(1. - toneAmt);
     float gap = ring;                                // la espuma es papel
-    col = mix(col, cSeaD, seaL*(1. - gap)*(1. - land));
+    col = mix(col, cSeaD, seaL*(1. - max(gap, onGap))*(1. - land));
     col = mix(col, cGranite, coast*.9);
-    col = mix(col, cSand, sandC);
+    col = mix(col, mix(cSand, cGranite, step(dTip, 110.)), sandC);
     vec3 ink = mix(cGrass, cGranite, smoothstep(.3, .7, rock));
     col = mix(col, ink, max(cont, hachC));
     col = mix(col, cOchre, trailC);
@@ -139,20 +158,46 @@ void main(){
   o = vec4(col, 1.);
 }`;
 
-  // Composición por frente: A delante del borde, B detrás. dir: dirección de avance del borde (px), pos: posición del borde.
+  // Composición por frente: A delante del borde, B detrás. El borde es un frente grabado: tres octavas de ruido (mordido irregular),
+  // una ondulación larga, máscara dura (las dos capas quedan nítidas), línea de ancho variable y, opcional, rebaba punteada delante.
   SH.front = SH.common + `
 uniform sampler2D ta, tb;
-uniform vec2 dir; uniform float pos, amp, feather, lineW, nscale, seed;
+uniform vec2 dir; uniform float pos, lineW, seed;
+uniform vec4 oct;    // amplitud gruesa, escala gruesa, amplitud media, escala media (px)
+uniform vec4 oct2;   // amplitud fina, escala fina, amplitud de la onda larga, periodo de la onda
 uniform vec3 lineCol;
+uniform float burr;  // ancho de la banda de rebaba (px) delante del borde; 0 = sin rebaba
+float edgeF(vec2 px){
+  vec2 nd = vec2(-dir.y, dir.x);
+  float s = dot(px, nd);
+  return dot(px, dir)
+    + oct.x*(fbm3(vec2(s/oct.y, seed)) - .5)*2.
+    + oct.z*(fbm3(px/oct.w + seed*3.) - .5)*2.
+    + oct2.x*(vnoise(px/oct2.y + seed*5.) - .5)*2.
+    + oct2.z*sin(s/oct2.w + seed);
+}
 void main(){
   vec2 px = pxOf(uv);
-  float f = dot(px, dir) + (fbm3(px/nscale + seed) - .5)*2.*amp;
+  float f = edgeF(px);
   float gpx = max(length(vec2(dFdx(f), dFdy(f))), 1e-4);
-  float m = smoothstep(pos - 1.2*gpx, pos + 1.2*gpx, f);   // borde nítido (1 = aún delante del frente → capa A)
+  float dd = (f - pos)/gpx;                                 // px con signo: + = todavía delante del frente (capa A)
+  float m = smoothstep(-1.2, 1.2, dd);
   vec3 a = texture(ta, uv).rgb, b = texture(tb, uv).rgb;
   vec3 col = mix(b, a, m);
-  float d = abs(f - pos)/gpx;
-  col = mix(col, lineCol, lineCov(d, lineW*.5)*step(.5, lineW));
+  // línea que cabalga el borde: ancho ±1 px con ruido fijo, pocas mellas
+  float lw = lineW*.5 + (vnoise(px/23. + seed) - .5)*1. ;
+  float nick = step(.12, vnoise(px/9. + seed*2.));
+  col = mix(col, lineCol, lineCov(abs(dd), max(lw, 1.1))*step(.5, lineW)*nick);
+  // rebaba: puntos ocres fijos delante del borde, cada vez más ralos
+  if (burr > 0. && dd > 2. && dd < burr + 4.) {
+    vec2 cell = floor(px/7.);
+    vec2 jit = vec2(hash21(cell), hash21(cell + 17.3));
+    vec2 c = (cell + .2 + .6*jit)*7.;
+    float dens = 1. - (dd - 2.)/burr;
+    float on = step(hash21(cell + 5.1), dens*dens*.9);
+    float r = 1.3 + .5*hash21(cell + 9.7);
+    col = mix(col, lineCol, clamp(r - length(px - c) + .5, 0., 1.)*on);
+  }
   o = vec4(col, 1.);
 }`;
 })();
@@ -162,18 +207,17 @@ void main(){
   const SH = window.CC_SH;
   SH.oblique = (waterGLSL) => SH.common + `
 uniform sampler2D land, stat, dyn;
-uniform float yOff, ybh, BH, f, cz, t, S, low, wmul, skyK, echoFront, echoPhase, echoAmp, swash, closeK, decayK;
+uniform float yOff, ybh, BH, f, cz, t, S, low, wmul, echoFront, echoPhase, echoAmp, echoLeft, echoT0, swash, closeK, clearK, decayK;
 uniform vec2 tipB;
 uniform vec4 shipBox; uniform float shipBob;
 uniform vec4 on0, am0;
-uniform vec4 r0, r1, r2, r3, r4;
+uniform vec4 clr;    // cierre: centro x, y del bloque; borde inferior del papel limpio; radio de esquina
 uniform vec3 cPaper, cGranite, cGrass, cSand, cSeaD, cOchre;
 uniform float grainAmt, toneAmt;
-uniform vec4 skyP;   // spacing, topW, cloud1 y, cloud2 y
+uniform vec4 skyP;   // spacing, topW, -, -
 uniform vec4 seaP;   // dlog, waveAmp, -, swellFrom
 uniform vec4 echoP;  // aspect, rho0, lambda, gap
 ${waterGLSL}
-float inRect(vec2 p, vec4 r){ vec2 a = r.xy - 30., b = r.zw + 30.; vec2 d = max(a - p, p - b); return 1. - smoothstep(-6., 0., max(d.x, d.y)); }
 float tdec(float v){ return 20. + 20.*(v*255. - 1.)/254.; }
 float swell(float d, float ti, float A){
   float dt = t - ti; if (dt <= 0. || dt > 6.) return 0.;
@@ -181,6 +225,7 @@ float swell(float d, float ti, float A){
   float x = (d - ds)/(ds*.16);
   return A*exp(-dt/2.2)*exp(-x*x)*sin(x*2.2);
 }
+float sdRBox(vec2 p, vec2 b, float r){ vec2 q = abs(p) - b + r; return length(max(q, 0.)) + min(max(q.x, q.y), 0.) - r; }
 void main(){
   vec2 px = pxOf(uv);
   vec2 pb = vec2(px.x, px.y + yOff);
@@ -191,61 +236,87 @@ void main(){
   vec4 Sx = texture(stat, tu);
   vec4 Dy = texture(dyn, vec2(pbs.x/1080., 1. - pbs.y/BH));
   float wob = (vnoise(pb/9.) - .5)*.7;
-  float rectK = 1. - closeK*max(max(max(inRect(px, r0), inRect(px, r1)), max(inRect(px, r2), inRect(px, r3))), inRect(px, r4));
+  // cierre: el cielo rayado se acorta desde el centro del bloque hacia afuera (nunca se agrisa); abajo, borde orgánico
+  float warp = (vnoise(px/70.) - .5)*26.;
+  float clearIn = step(sdRBox(px - clr.xy, vec2(1100.)*clearK, clr.w*clearK) + warp, 0.)*step(px.y + warp*.6, clr.z)*step(.001, clearK);
   vec3 col = cPaper*(1. + grainAmt*tooth(px))*(1. - toneAmt);
 
   float below = pb.y - ybh;
-  float skyC = 0., seaC = 0., gapC = 0., sandC = 0.;
+  float skyC = 0., seaC = 0., gapC = 0., sandC = 0., edgeC = 0.;
   if (below <= 0.) {
-    // CIELO: rayado fino que adelgaza hasta el horizonte (el resplandor es papel), dos bandas de nube
-    float fromTop = clamp((ybh - pb.y)/ybh, 0., 1.);
-    float cl = exp(-pow((pb.y - skyP.z + 22.*sin(pb.x/310. + 1.))/70., 2.)) + .8*exp(-pow((pb.y - skyP.w + 18.*sin(pb.x/260. + 4.))/55., 2.));
-    float hw = (skyP.y*.5*pow(fromTop, 1.25) + .4*cl*(vnoise(pb*vec2(1./240., 1./40.)) - .35)*2.)*wmul;
-    skyC = lineCov(abs(fract(pb.y/skyP.x + .5) - .5)*skyP.x, max(0., hw + wob*.3*fromTop))*smoothstep(0., 40., ybh - pb.y);
+    // CIELO: rayado fino que adelgaza hasta el horizonte y en el resplandor detrás de la sierra; tres bandas de nube
+    float above = ybh - pb.y;
+    float fromTop = clamp(above/760., 0., 1.);
+    float c1 = exp(-pow((above - 560. + 20.*sin(pb.x/310. + 1.))/70., 2.));
+    float c2 = .9*exp(-pow((above - 300. + 16.*sin(pb.x/260. + 4.))/55., 2.));
+    float c3 = exp(-pow((above - 860. + .26*pb.x + 14.*sin(pb.x/200.))/60., 2.));
+    float cl = c1 + c2 + c3;
+    float glow = 1. - exp(-pow(length((vec2(pb.x, above) - vec2(120., 380.))/vec2(520., 300.)), 2.));
+    float hw = (skyP.y*.5*pow(fromTop, 1.1)*mix(.35, 1., glow) + 1.2*cl*(vnoise(pb*vec2(1./240., 1./40.)) - .38)*2.)*wmul;
+    skyC = lineCov(abs(fract(pb.y/skyP.x + .5) - .5)*skyP.x, max(0., hw + wob*.3*fromTop))*smoothstep(0., 40., above)*(1. - clearIn);
   } else {
     float dw = waterD(pb.x);
     float sw = swash;
     float dEdge = dw - .35*sw;
-    // desplazamientos del mar: olas (fase del mar), mar de fondo por golpes
+    // desplazamientos del mar: olas (fase del mar) y mar de fondo por golpes; casi quietos junto al horizonte
     float d0 = f*cz/below;
     vec2 wp = vec2(pb.x*d0/f, d0);
-    float waveP = seaP.y*(fbm3(vec2(wp.x/22., wp.y/9.) + vec2(S*.35, -S*.9)) - .5)*2.*min(1., below/90.)*decayK;
-    float swP = (swell(d0, on0.x, am0.x) + swell(d0, on0.y, am0.y) + swell(d0, on0.z, am0.z) + swell(d0, on0.w, am0.w))*decayK;
+    float nearH = smoothstep(20., 120., below);
+    float waveP = seaP.y*(fbm3(vec2(wp.x/22., wp.y/9.) + vec2(S*.35, -S*.9)) - .5)*2.*nearH*decayK;
+    float swP = (swell(d0, on0.x, am0.x) + swell(d0, on0.y, am0.y) + swell(d0, on0.z, am0.z) + swell(d0, on0.w, am0.w))*decayK*nearH;
     float b2 = max(below + waveP + swP, .5);
     float d = f*cz/b2;
+    float yEdge = ybh + f*cz/dEdge;
     if (d0 > dEdge) {
-      // MAR: isolíneas de log(profundidad) con nivel de detalle (nunca a menos de 13 px)
+      // MAR: isolíneas de log(profundidad) con nivel de detalle (nunca a menos de 13 px; la primera a ≥ 13 px del horizonte)
       float n = log(d)/seaP.x;
       float fw = max(fwidth(n), 1e-5);
       float lod = max(0., log2(fw*13.));
       float L0 = floor(lod), fr = lod - L0;
       float hwS = (1.2 + .2*vnoise(pb/60.) + wob*.4)*wmul;
       float c0 = lineCov(isoDist(n/exp2(L0)), hwS), c1 = lineCov(isoDist(n/exp2(L0 + 1.)), hwS);
-      seaC = mix(c0, c1, smoothstep(.55, 1., fr))*smoothstep(2., 10., below);
-      // resaca: líneas de papel paralelas a la orilla que suben y bajan
-      float lace = (vnoise(pb/7.) - .5)*1.4;
+      seaC = mix(c0, c1, smoothstep(.35, .65, fr))*step(13., below)*step(3., yEdge - pb.y);
+      // orilla: línea de agua (tinta de mar) y resaca en papel, con bordes de encaje, siguiendo la curva de la playa
+      float lace = (vnoise(pb/7.) - .5)*2.2;
+      float brk = step(.2, vnoise(vec2(pb.x/23., 3.)));
       for (int k = 0; k < 3; k++) {
-        float dk = dEdge + .9 + float(k)*float(k + 2)*.85;
+        float dk = dEdge + .5 + float(k)*(.9 + .45*float(k));
         float yk = ybh + f*cz/dk;
-        gapC = max(gapC, lineCov(abs(pb.y - yk), (1.8 - float(k)*.25) + lace)*(1. - float(k)*.22));
+        gapC = max(gapC, lineCov(abs(pb.y - yk), (2.6 - float(k)*.35) + lace*.6)*mix(1., brk, float(k)*.5));
       }
-      gapC = max(gapC, 1. - smoothstep(2.5, 5., (pb.y - (ybh + f*cz/dEdge))*-1.));
-      // ECOS: arcos de espuma que repiten el perfil de la punta y avanzan hacia quien mira
+      // ECOS: la sierra se vuelve espuma. Curvas que repiten el contorno de la punta (flanco bajo la pared + extremo),
+      // se abren desde la punta hacia quien mira; papel con filo de granito del lado del mar.
       if (echoAmp > 0.) {
-        vec2 q = vec2((pb.x - tipB.x)/echoP.x, pb.y - tipB.y);
-        float rho = length(q);
+        vec2 q = pb - tipB;
+        float qy = max(q.y, 0.);
+        float rho = q.x < 0. ? qy : length(vec2(q.x/echoP.x, qy));
         float er = log(1. + rho/echoP.y)/echoP.z;
         float ph = er - echoPhase;
-        float dd = isoDist(ph);
-        float vis = (1. - smoothstep(echoFront - .6, echoFront, er))*echoAmp*(1. - .45*smoothstep(4., 10., er));
-        float gw = echoP.w*.5*(.8 + .25*low);
-        float gapE = lineCov(dd, gw)*vis;
-        float edgeE = lineCov(abs(dd - gw - 1.9), 1.3)*vis*step(.2, vis);
-        gapC = max(gapC, gapE);
-        seaC = max(seaC*(1. - gapE), edgeE);
+        float fwp = max(fwidth(ph), 1e-5);
+        float sdp = (fract(ph + .5) - .5)/fwp;
+        float ring = floor(ph + .5);
+        // a lo largo del eco: 0 en el horizonte junto a la punta → 1 bajo la punta → 2 bajo la pared
+        float leftEnd = echoLeft*(.45 + .55*min(1., er/4.)) + (vnoise(vec2(ring*3.1, 2.)) - .5)*70.;
+        float along = q.x >= 0. ? atan(qy, q.x/echoP.x)/1.5708 : 1. + (-q.x)/leftEnd;
+        // buril: cada eco nuevo se corta desde la punta hacia afuera en 0,4 s
+        float cutU = (t - (echoT0 + echoFront*er))/.2;
+        float vis = step(along, cutU)*step(along, 2.)*echoAmp;
+        float thin = (1. - .2*clamp(er - 4.5, 0., 3.))*(q.x < 0. ? clamp((leftEnd + q.x)/90., 0., 1.) : 1.);
+        // línea de granito (la misma tinta que la pared) con un halo de papel que corta el rayado del mar
+        float inkE = lineCov(abs(sdp), (1.75 + .2*low)*thin + wob*.3)*vis;
+        float haloE = lineCov(abs(sdp), (echoP.w*.5 + 1.8)*thin)*vis;
+        // cota cero: la orilla de la punta es el primer eco (siempre tallada desde que empiezan)
+        float coast0 = lineCov(qy, 1.6)*step(-leftEnd*.8, q.x)*step(q.x, 4.)*step(along, cutU + 2.)*echoAmp;
+        gapC = max(gapC, haloE);
+        edgeC = max(edgeC, max(inkE, coast0));
+        seaC *= 1. - haloE;
       }
     } else {
       sandC = Sx.b;
+      // borde mojado: línea fina de tinta de mar en la línea de agua
+      edgeC = 0.;
+      gapC = 0.;
+      seaC = lineCov(abs(pb.y - yEdge + 1.5), 1.1 + wob*.3)*step(.25, vnoise(vec2(pb.x/31., 7.)));
     }
   }
   // tiempos de las figuras que se tallan (barco, colonos y bote, O6)
@@ -254,16 +325,17 @@ void main(){
   float dmask = step(.003, Sx.a)*smoothstep(20. + 20.*Sx.a - .01, 20. + 20.*Sx.a + .1, t);
   float fig = max(Sx.g, dmask);
   float bg = (1. - fig)*(1. - L.a);
-  col = mix(col, cGranite, skyC*skyK*rectK*bg);
-  col = mix(col, cSeaD, seaC*(1. - gapC)*rectK*bg);
+  col = mix(col, cGranite, skyC*bg);
+  col = mix(col, cSeaD, seaC*(1. - gapC)*bg);
   col = mix(col, cSand, sandC*bg);
+  col = mix(col, cGranite, edgeC*bg);
   // tierra
-  float lk = (1. - fig)*rectK;
+  float lk = 1. - fig;
   col = mix(col, cGrass, L.g*lk);
   col = mix(col, cGranite, L.r*lk);
   col = mix(col, cOchre, L.b*lk);
   // figuras
-  col = mix(col, cGranite, Sx.r*(1. - dmask*step(.5, Sx.g)*0.));
+  col = mix(col, cGranite, Sx.r);
   col = mix(col, cGranite, max(Dy.r*hatchOn, Dy.b*coreOn));
   o = vec4(col, 1.);
 }`;

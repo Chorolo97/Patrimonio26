@@ -323,8 +323,6 @@
         }
       };
       set(ax, 7.5, -0.1, 1.0, 3.0, 2.2);
-      const a2 = Math.atan2(ax[1], ax[0]) + 0.62, ax2 = [Math.cos(a2), Math.sin(a2)];
-      set(ax2, 9, -0.1, 0.3, 2.4, 2.2);
       const xa = U.alpha(xc);
       shadow = new Float32Array(w * h);
       for (let i = 0; i < w * h; i++) shadow[i] = Math.min(1, sa[i] * xa[i] * 1.15) * (1 - mask[i]);
