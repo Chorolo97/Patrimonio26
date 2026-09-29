@@ -372,11 +372,14 @@ window.createReel = async function (canvas, cfg) {
     const grp = [0, 1, 2, 3].map((i) => (isOld ? 1 : (P.gdef[i + 1] ? devGroup(P, i + 1, t) : 0)));
     const go = [1, 2, 3, 4].map((g) => [...groupOffset(P, g, t), 0, 0]);
     const [par, par2] = parFor(P, t);
+    // caja unión de los grupos (ya desplazados): fuera de ella no se busca ninguna figura
+    let gU = [1e5, 1e5, -1e5, -1e5];
+    [1, 2, 3, 4].forEach((g, i) => { const b = P.gbox[i]; if (b[0] > b[2]) return; gU = [Math.min(gU[0], b[0] + go[i][0]), Math.min(gU[1], b[1] + go[i][1]), Math.max(gU[2], b[2] + go[i][0]), Math.max(gU[3], b[3] + go[i][1])]; });
     return {
       uPhoto: tex[P.photo].photo, uMask: tex[P.photo].mask, uFigA: P.figA, uFigB: P.figB,
       geo: [ox, oy, P.scale, z], geo2: [c[0], c[1], ms.w, ms.h], boxA: P.boxA, boxB: P.boxB, grp,
       gcw: [1, 2, 3, 4].map((g) => (P.gdef[g] && P.gdef[g].coreW != null ? P.gdef[g].coreW : 0.72)),
-      gb1: P.gbox[0], gb2: P.gbox[1], gb3: P.gbox[2], gb4: P.gbox[3], go1: go[0], go2: go[1], go3: go[2], go4: go[3], par, par2,
+      gb1: P.gbox[0], gb2: P.gbox[1], gb3: P.gbox[2], gb4: P.gbox[3], go1: go[0], go2: go[1], go3: go[2], go4: go[3], gU, par, par2,
     };
   };
 
@@ -409,9 +412,9 @@ window.createReel = async function (canvas, cfg) {
     };
     G.bindBuffer(G.ARRAY_BUFFER, triBuf);
     const prof = window.__prof ? [performance.now()] : null;
-    if (Aold) gl.draw(progFor(Aold), { ...common, ...printU(Aold, t, true), uIsOld: 1 }, fboA);
+    if (Aold) gl.draw(progFor(Aold), { ...common, ...printU(Aold, t, true), uIsOld: 1, uDualPass: 1 }, fboA);
     if (prof) { sync(true); prof.push(performance.now()); }
-    gl.draw(progFor(B), { ...common, ...printU(B, t, false), uIsOld: 0 }, fboB);
+    gl.draw(progFor(B), { ...common, ...printU(B, t, false), uIsOld: 0, uDualPass: Aold ? 1 : 0 }, fboB);
     if (prof) { sync(true); prof.push(performance.now()); }
     const sink = isLab ? PBS.smooth((t - R.t0) / (R.dur * 0.5)) : 0;
     const selB = selAmt(B, t), selA = Aold ? selAmt(Aold, t) : 0;
@@ -459,6 +462,17 @@ window.createReel = async function (canvas, cfg) {
   lg('antes de precalentar');
   for (const tw of warm) { render(Math.max(0, tw)); G.finish(); lg('precalentado ' + tw.toFixed(1)); }
   G.finish();
-  window.__rv = { W, Sph, onsets, relays: relays.map((R) => ({ print: R.print, type: R.type, t0: R.t0, tLast: R.tLast, tBleached: R.tBleached, tDone: R.tDone, v: R.v })), shed: shed.map((s) => ({ print: s.sc.print, n: s.n, cand: s.cand })), prints, camAt, initMs: performance.now() - T0INIT, groups: Object.fromEntries(Object.entries(prints).map(([id, P]) => [id, Object.fromEntries(Object.entries(P.gdef).map(([g, d]) => [g, d.start]))])) };
+  // banco de pruebas de rendimiento (sólo depuración): tiempo de un pase de copia con el código modificado por `mod`
+  const perfPass = (id, t, mod, n = 3) => {
+    const P = prints[id]; let src = RV.printSource({ kind: P.kind, archive: !!P.archive, figB: P.hasB }); if (mod) src = mod(src);
+    const prog = gl.program(src);
+    const R = relays.find((r) => r.print === id), rn = cfg.rinse;
+    const common = { uT: Mt(t), uTr: t, uS: Sph(t), uWt: W2(t), uLow: at(A.low, t), uHigh: at(A.high, t), uRms: at(A.rms, t), uWtex: wTex, uNoise: noiseTex, uNW: NW, uMen: [R.t0, R.s0, R.v, R.a], uMen2: [R.bow, R.noiseAmp, R.seed, 0], uMen3: [0, 0.45, 0.03, 0], uMen4: [0, 0, 0, 0], uFigTau: 0.3, uDevAll: 1, uRinse: [0, -1e4, 0, 0], uSurge: 0, uSwashPhase: Sph(t) * 1.35, uGrottoPhase: 0.4, uOn: onsetInfo(t), uTone: toneTex, uIsOld: 0, uDualPass: 0 };
+    const u = { ...common, ...printU(P, t, false) };
+    G.bindBuffer(G.ARRAY_BUFFER, triBuf);
+    gl.draw(prog, u, fboB); sync(true);
+    const a = performance.now(); for (let i = 0; i < n; i++) { gl.draw(prog, u, fboB); sync(true); } return (performance.now() - a) / n;
+  };
+  window.__rv = { perfPass, W, Sph, onsets, relays: relays.map((R) => ({ print: R.print, type: R.type, t0: R.t0, tLast: R.tLast, tBleached: R.tBleached, tDone: R.tDone, v: R.v })), shed: shed.map((s) => ({ print: s.sc.print, n: s.n, cand: s.cand })), prints, camAt, initMs: performance.now() - T0INIT, groups: Object.fromEntries(Object.entries(prints).map(([id, P]) => [id, Object.fromEntries(Object.entries(P.gdef).map(([g, d]) => [g, d.start]))])) };
   return { warnings, logo: !!logo, render };
 };

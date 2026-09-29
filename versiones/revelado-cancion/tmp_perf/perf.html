@@ -1,0 +1,49 @@
+<!doctype html><html><body><canvas id=c width=1080 height=1920></canvas>
+<script src="../../../shared/lib/core.js"></script><script src="../../../shared/lib/gl.js"></script>
+<script>
+window.run = async function(){
+  const gl = new PBS.GL(1080,1920), G = gl.gl;
+  const out = [];
+  const mkTex = (fmt, w, h) => { const t = G.createTexture(); G.bindTexture(G.TEXTURE_2D, t); G.texParameteri(G.TEXTURE_2D, G.TEXTURE_MIN_FILTER, G.LINEAR); G.texParameteri(G.TEXTURE_2D, G.TEXTURE_MAG_FILTER, G.LINEAR); G.texParameteri(G.TEXTURE_2D, G.TEXTURE_WRAP_S, G.REPEAT); G.texParameteri(G.TEXTURE_2D, G.TEXTURE_WRAP_T, G.REPEAT);
+    if (fmt==='rgba8') G.texImage2D(G.TEXTURE_2D,0,G.RGBA,w,h,0,G.RGBA,G.UNSIGNED_BYTE,null); else if (fmt==='rgba16f') G.texImage2D(G.TEXTURE_2D,0,G.RGBA16F,w,h,0,G.RGBA,G.HALF_FLOAT,null); else G.texImage2D(G.TEXTURE_2D,0,G.RGBA32F,w,h,0,G.RGBA,G.FLOAT,null); return t; };
+  const noise = gl.texture((()=>{const c=document.createElement('canvas');c.width=c.height=512;const g=c.getContext('2d');const id=g.createImageData(512,512);for(let i=0;i<id.data.length;i++)id.data[i]=Math.random()*255;g.putImageData(id,0,0);return c;})(), {repeat:true});
+  G.bindTexture(G.TEXTURE_2D, noise); G.generateMipmap(G.TEXTURE_2D); G.texParameteri(G.TEXTURE_2D, G.TEXTURE_MIN_FILTER, G.LINEAR_MIPMAP_LINEAR);
+  const big = gl.texture((()=>{const c=document.createElement('canvas');c.width=3030;c.height=1710;const g=c.getContext('2d');const id=g.createImageData(3030,1710);for(let i=0;i<id.data.length;i++)id.data[i]=Math.random()*255;g.putImageData(id,0,0);return c;})());
+  const sizes = [[1080,1920],[720,1280],[540,960]];
+  const mkFbo = (fmt,w,h) => { const t = mkTex(fmt,w,h); const fb = G.createFramebuffer(); G.bindFramebuffer(G.FRAMEBUFFER, fb); G.framebufferTexture2D(G.FRAMEBUFFER,G.COLOR_ATTACHMENT0,G.TEXTURE_2D,t,0); G.bindFramebuffer(G.FRAMEBUFFER,null); return {fb,tex:t,w,h}; };
+  const time = (label, fs, uni, target, n=3) => {
+    const p = gl.program('#version 300 es\nprecision highp float; precision highp int; precision highp sampler2D; in vec2 uv; out vec4 o;\n'+fs);
+    const buf = new Float32Array(4), b8 = new Uint8Array(4);
+    const sync = () => { if (target && target.float) G.readPixels(0,0,1,1,G.RGBA,G.FLOAT,buf); else G.readPixels(0,0,1,1,G.RGBA,G.UNSIGNED_BYTE,b8); };
+    gl.draw(p, uni, target||null); sync();
+    const t0 = performance.now();
+    for (let i=0;i<n;i++){ gl.draw(p, uni, target||null); sync(); }
+    out.push(label+': '+((performance.now()-t0)/n).toFixed(1)+' ms');
+  };
+  const f16 = mkFbo('rgba16f',1080,1920); f16.float=true;
+  const f8 = mkFbo('rgba8',1080,1920);
+  const f32 = mkFbo('rgba32f',1080,1920); f32.float=true;
+  const h16 = mkFbo('rgba16f',720,1280); h16.float=true;
+  const q16 = mkFbo('rgba16f',540,960); q16.float=true;
+  time('empty screen', 'void main(){ o=vec4(uv,0.,1.); }', {});
+  time('empty f16', 'void main(){ o=vec4(uv,0.,1.); }', {}, f16);
+  time('empty f8', 'void main(){ o=vec4(uv,0.,1.); }', {}, f8);
+  time('empty f32', 'void main(){ o=vec4(uv,0.,1.); }', {}, f32);
+  time('texelFetch f16 -> screen', 'uniform sampler2D t; void main(){ o=texelFetch(t, ivec2(gl_FragCoord.xy),0); }', {t:f16.tex});
+  time('texelFetch f8 -> screen', 'uniform sampler2D t; void main(){ o=texelFetch(t, ivec2(gl_FragCoord.xy),0); }', {t:f8.tex});
+  time('texelFetch f32 -> screen', 'uniform sampler2D t; void main(){ o=texelFetch(t, ivec2(gl_FragCoord.xy),0); }', {t:f32.tex});
+  time('texture f16 linear -> screen', 'uniform sampler2D t; void main(){ o=texture(t, uv); }', {t:f16.tex});
+  time('noise fetch x1', 'uniform sampler2D t; void main(){ o=texture(t, uv*3.); }', {t:noise});
+  time('noise fetch x4', 'uniform sampler2D t; void main(){ vec4 a=texture(t, uv*3.)+texture(t, uv*4.+0.1)+texture(t, uv*5.+0.2)+texture(t, uv*6.+0.3); o=a*0.25; }', {t:noise});
+  time('big photo x1', 'uniform sampler2D t; void main(){ o=texture(t, uv); }', {t:big});
+  time('big photo x2 (warped)', 'uniform sampler2D t; void main(){ vec4 a=texture(t, uv); vec4 b=texture(t, uv+0.01*a.xy); o=a+b; }', {t:big});
+  time('alu 100 mad', 'void main(){ float x=uv.x; for(int i=0;i<100;i++){ x = x*1.0001+uv.y*0.5; } o=vec4(x); }', {});
+  time('alu 300 mad', 'void main(){ float x=uv.x; for(int i=0;i<300;i++){ x = x*1.0001+uv.y*0.5; } o=vec4(x); }', {});
+  time('exp2/log2 x10', 'void main(){ float x=uv.x+0.5; for(int i=0;i<10;i++){ x = exp2(log2(x)*0.9)+0.1; } o=vec4(x); }', {});
+  time('pcg hash x4', 'uint pcg(uint v){ uint s = v*747796405u + 2891336453u; uint w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u; return (w >> 22u) ^ w; } void main(){ uint a = uint(gl_FragCoord.x), b=uint(gl_FragCoord.y); float x=0.; for(int i=0;i<4;i++){ a = pcg(a+b); x+= float(a)*(1./4294967295.);} o=vec4(x); }', {});
+  time('half res f16 empty', 'void main(){ o=vec4(uv,0.,1.); }', {}, h16);
+  time('quarter-ish f16 empty', 'void main(){ o=vec4(uv,0.,1.); }', {}, q16);
+  time('half res noise x4 f16', 'uniform sampler2D t; void main(){ vec4 a=texture(t, uv*3.)+texture(t, uv*4.+0.1)+texture(t, uv*5.+0.2)+texture(t, uv*6.+0.3); o=a*0.25; }', {t:noise}, h16);
+  return out;
+};
+</script></body></html>

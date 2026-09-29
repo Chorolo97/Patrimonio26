@@ -102,7 +102,8 @@ uniform float uT, uS, uLow, uHigh, uRms, uSurge, uSwashPhase, uGrottoPhase, uIsO
 uniform vec4 uOn;       // último arranque (t, índice), anterior (t, índice)
 ${FRONT}
 uniform sampler2D uPhoto, uMask, uFigA, uFigB;
-uniform vec4 geo, geo2, boxA, boxB, grp, gcw, gb1, gb2, gb3, gb4, go1, go2, go3, go4, par, par2;
+uniform vec4 geo, geo2, boxA, boxB, grp, gcw, gb1, gb2, gb3, gb4, go1, go2, go3, go4, gU, par, par2;
+uniform float uDualPass;
 struct PR { float Dbg; float Df; float c; float foam; float arch; };
 __WATERLINE__
 `;
@@ -192,7 +193,7 @@ PR shade(vec2 p, float dev, float devFig){
     fig(F, devFig, q, lightMul, 17u, 0.72, r);
   }
 #if HAS_FIGB
-  {
+  if (q.x > gU.x && q.y > gU.y && q.x < gU.z && q.y < gU.w) {
     for (int gi = 0; gi < 4; gi++) {
       vec4 gbx = gi == 0 ? gb1 : gi == 1 ? gb2 : gi == 2 ? gb3 : gb4;
       vec4 gof = gi == 0 ? go1 : gi == 1 ? go2 : gi == 2 ? go3 : go4;
@@ -218,6 +219,11 @@ PR shade(vec2 p, float dev, float devFig){
 void main(){
   vec2 p = vec2(uv.x * 1080., (1. - uv.y) * 1920.);
   FR f = frontAll(p);
+  // durante un relevo cada pase sólo calcula su parte del cuadro: la vieja delante del frente, la nueva detrás
+  if (uDualPass > 0.5 && uMen2.w > 0.5 && uMen4.x < 0.5) {
+    if (uIsOld > 0.5 && f.er > 70.) { o = vec4(0.); return; }
+    if (uIsOld < 0.5 && f.er <= 0.) { o = vec4(0.); return; }
+  }
   float dev = f.dev, devFig = f.devFig;
   if (uIsOld > 0.5) { dev = 1.; devFig = 1.; }
   PR r = shade(f.pr, dev, devFig);

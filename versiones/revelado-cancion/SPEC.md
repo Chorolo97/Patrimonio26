@@ -100,3 +100,15 @@ Ninguna anotación presenta una etimología dudosa como hecho: usar «se interpr
 - Estrofa 2, primera línea: «[del timbes] y piedra arisca». No está resuelto: sin anotación.
 - Estrofa 3, primera línea: el usuario oye «[carapebos] de los indios». Es casi seguro **«Carapé, … de los indios»**: Carapé figura entre las palabras de la canción en el texto de difusión y es la única que faltaba en la transcripción. Se agrega la anotación **«Carapé»** en 111,5–117,0 s: palabra «Carapé» / glosa «sierra de Maldonado y Lavalleja; se suele traducir “bajo”». La imagen del tramo 110,8–121 puede abrir con la gruta como «piedra de la sierra» y seguir igual.
 - Coda: «Sierra [desechar?] arena» se lee muy probablemente como **«Sierra deshecha en arena / de tanto llorarle al mar»**. Refuerza el cierre: en la playa, la plata del granito se deshace en granos de arena, de forma visible y bella, entre ≈146 y 155 s. No se subtitula.
+
+## 9. Copias sin negativo (lugares que el archivo no tiene)
+El usuario aportó fotos de referencia de autoría desconocida. **Solo sirven como inspiración:** no se usan, no se calcan ni se copia su composición, y quedan fuera del repositorio (`privado/inspiracion/`). Para esos lugares se generan **placas propias**, paisajes procedurales hechos una vez con Python o WebGL: relieve, luz, atmósfera, vegetación y grano. La bandeja las trata igual que a las fotos: viradas, con grano de plata y reveladas por el menisco. Son evocaciones, no documentos, y deben verse coherentes con las copias reales, sin estética de videojuego.
+
+| Placa | Inspiración (qué evocar) | Tramo |
+|---|---|---|
+| **quebrada** | valle serrano profundo y cerrado, laderas con monte nativo espeso y afloramientos de roca clara, un arroyo al fondo, lomas lejanas (Quebrada de los Cuervos y Sierras del Yerbal). Sin barandas, caminos ni pinos. | 62,5–68,3, «sierras del Yerbal» (antes era la foto yerbal) |
+| **tacuari** | río ancho y lento de aguas pardas, orillas con monte ribereño denso y matas de tacuara, cielo nublado. Sin bote. | 69,9–72,8, «Tacuarí» |
+| **cerrito** | llanura baja de pastizal hacia la Laguna Merín, con una isla de monte sobre un montículo suave (cerrito de indios). No se anota que sea arachán. | 72,8–76,0, «Guazunambí arachán» |
+| **carape** | cumbre de sierra de pastizal con bloques y crestones de granito claro, cielo amplio. | 110,5–117,5, «Carapé vos de los indios», con personas indígenas; la gruta pasa a 117,5–124,5 junto con los estratos |
+
+La foto **yerbal** queda para 75,6–83,6 (coronillar, viraje cálido).
