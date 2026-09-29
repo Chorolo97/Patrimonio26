@@ -383,7 +383,7 @@ void main(){
     Ll *= mix(1., lightMul, 1. - 0.6*skyM);
     // el cielo no queda en papel blanco: bruma y celajes suaves que bajan un poco las luces
     float hz2 = texture(uNoise, vec2(q.x/900. + uS*0.004, q.y/240.)/4.).b;
-    Ll *= 1. - skyM*live*(0.10 + 0.10*smoothstep(0.3, 0.8, hz2) + 0.08*smoothstep(430., 0., q.y));
+    Ll *= 1. - skyM*live*(0.20 + 0.14*smoothstep(0.3, 0.8, hz2) + 0.20*(1. - smoothstep(0., 430., q.y)));
   }`, post: `` };
 
   // 7 · Portezuelo (rinconada): mar con ondas, resaca sobre la arena, luz que camina (como en Revelado)

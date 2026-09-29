@@ -44,7 +44,7 @@ def scene():
     # albedo: granito claro con manchas y fisuras; pasto medio
     crack = np.abs(fbm(N, N, 26, 3, 74) - 0.5) < 0.018
     gran = 0.41 + 0.14 * (fbm(N, N, 7, 4, 75) - 0.5) - 0.10 * crack - 0.08 * sm(0.62, 0.8, fbm(N, N, 16, 3, 76))
-    grass = 0.40 + 0.07 * fbm(N, N, 60, 4, 77) + 0.03 * fbm(N, N, 5, 3, 78)
+    grass = 0.46 + 0.06 * fbm(N, N, 60, 4, 77) + 0.03 * fbm(N, N, 5, 3, 78)
     alb = grass * (1 - rock) + gran * rock
     ao = np.clip((gblur(h, 3) - h) / 4.0 + 0.9, 0.4, 1.05)
     veg = np.clip((1 - rock) * 0.8 + 0.1, 0, 1)
@@ -52,7 +52,7 @@ def scene():
 
 PARAMS = dict(sun=(-0.55, -0.35, 0.62), sunI=0.95, amb=0.44, gain=1.35, shadows=True, shadow_steps=80, shadow_tmax=500., shadow_bias=0.35, fog=3500., haze=0.80,
               sky_top=0.55, sky_hor=0.88, cloud_h=2200., cloud_amp=0.5, cloud_cover=0.42, cloud_scale=2800.,
-              m1=(21, 40, 0.28), m2=(22, 12, 0.06), micro_fade=260., micro_alb=0.5, micro_base=0.25, micro_n=0.15)
+              m1=(21, 40, 0.28), m2=(22, 12, 0.06), micro_fade=260., micro_alb=0.15, micro_base=0.10, micro_n=0.0)
 
 if __name__ == '__main__':
     quick = len(sys.argv) > 1 and sys.argv[1] == 'q'

@@ -187,6 +187,7 @@ window.createReel = async function (canvas, cfg) {
     for (const [x, y] of [[0, 0], [1080, 0], [0, 1920], [1080, 1920]]) { const pr = (x - 540) * d[0] + (y - 1920) * d[1], pp = (x - 540) * -d[1] + (y - 1920) * d[0]; pmin = Math.min(pmin, pr); pmax = Math.max(pmax, pr); perpMax = Math.max(perpMax, Math.abs(pp)); }
     const R = { print: s.print, sec: s, type: e.type || 'menisco', a, d, pmin, pmax, bow: e.bow || 80, noiseAmp: e.noiseAmp || 60, seed: e.seed || 1, figFront: e.figFront || 0, tau0: e.tau0 || 0.45, induction: e.induction != null ? e.induction : 0.03, wet: e.wet || 0, figTau: e.figTau || 0.3, dur: e.dur || 1.2 };
     const nmax = 1.25 * R.noiseAmp + R.bow * Math.pow(perpMax / 540, 2);
+    R.nmax = nmax;
     if (R.type === 'lab') {
       R.t0 = s.t0 - R.dur / 2; R.delay = R.dur * 0.5; R.s0 = 0; R.v = 1; R.tLast = R.t0 + R.delay + 0.5; R.tBleached = R.t0 + R.dur + 0.05;
     } else if (e.s0 != null) { // primer menisco: ya está cruzando en el cuadro 0
@@ -442,6 +443,23 @@ window.createReel = async function (canvas, cfg) {
     return [0, 0, 0, 1];
   };
   const noteCfg = cfg.noteStyle;
+  // durante un relevo con frente, cada pase de copia sólo necesita su lado del frente: se acota con tijera (la mitad del cuadro en promedio)
+  const relayRect = (R, t, old) => {
+    const s = R.s0 + R.v * (t - R.t0), m = R.nmax + 100, c = old ? s - m : s + m, d0 = R.d[0], d1 = R.d[1];
+    const poly = [[0, 0], [1080, 0], [1080, 1920], [0, 1920]], out = [];
+    const f = (p) => ((p[0] - 540) * d0 + (p[1] - 1920) * d1 - c) * (old ? 1 : -1);   // >= 0: dentro
+    for (let i = 0; i < 4; i++) {
+      const a = poly[i], b = poly[(i + 1) % 4], fa = f(a), fb = f(b);
+      if (fa >= 0) out.push(a);
+      if ((fa >= 0) !== (fb >= 0)) { const u = fa / (fa - fb); out.push([a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u]); }
+    }
+    if (!out.length) return null;
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    for (const [x, y] of out) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+    x0 = Math.max(0, Math.floor(x0) - 2); y0 = Math.max(0, Math.floor(y0) - 2); x1 = Math.min(1080, Math.ceil(x1) + 2); y1 = Math.min(1920, Math.ceil(y1) + 2);
+    return x1 > x0 && y1 > y0 ? [x0, y0, x1 - x0, y1 - y0] : null;
+  };
+  const withRect = (r, fn) => { if (r) { G.enable(G.SCISSOR_TEST); G.scissor(r[0], cfg.height - r[1] - r[3], r[2], r[3]); } fn(); if (r) G.disable(G.SCISSOR_TEST); };
   // plan de un cuadro: relevo vigente, copia nueva y (durante el relevo) la vieja, y qué variantes de programa hacen falta
   const planAt = (t) => {
     let k = 0; for (let i = 0; i < relays.length; i++) if (t >= relays[i].t0) k = i;
@@ -476,9 +494,10 @@ window.createReel = async function (canvas, cfg) {
     const prof = window.__prof ? [performance.now()] : null;
     if (front) { frontProg = frontProg || gl.program(RV.frontSource()); gl.draw(frontProg, common, fboFront); common.uFront = fboFront.tex; }
     let hasFA = null;
-    if (Aold) { gl.draw(progFor(Aold, true), { ...common, ...printU(Aold, t, true), uIsOld: 1, uDualPass: 1 }, fboA); hasFA = figPass(Aold, t, true, common, 1, true); }
+    const sc = Aold && menVisible(R, t) && R.type === 'menisco';
+    if (Aold) { withRect(sc ? relayRect(R, t, true) : null, () => gl.draw(progFor(Aold, true), { ...common, ...printU(Aold, t, true), uIsOld: 1, uDualPass: 1 }, fboA)); hasFA = figPass(Aold, t, true, common, 1, true); }
     if (prof) { sync(true); prof.push(performance.now()); }
-    gl.draw(progFor(B, front), { ...common, ...printU(B, t, false), uIsOld: 0, uDualPass: Aold ? 1 : 0 }, fboB);
+    withRect(sc ? relayRect(R, t, false) : null, () => gl.draw(progFor(B, front), { ...common, ...printU(B, t, false), uIsOld: 0, uDualPass: Aold ? 1 : 0 }, fboB));
     const hasFB = figPass(B, t, false, common, Aold ? 1 : 0, front);
     if (prof) { sync(true); prof.push(performance.now()); }
     const sink = isLab ? PBS.smooth((t - R.t0) / (R.dur * 0.5)) : 0;
