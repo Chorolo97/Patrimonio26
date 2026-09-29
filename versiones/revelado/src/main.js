@@ -141,7 +141,7 @@ window.createReel = async function (canvas, cfg) {
   const optOf = (P) => ({ gruta: P.kind === 'gruta', archive: !!P.archive, foam: !!P.foam, figB: P.groups.length > 0 });
   const progFor = (B, Aold) => {
     const key = B.id + (Aold ? '+' + Aold.id : '');
-    if (!progs[key]) progs[key] = gl.program(RV.compositeSource({ b: optOf(B), a: Aold ? { ...optOf(Aold), archive: false, foam: false } : null }));
+    if (!progs[key]) progs[key] = gl.program(RV.compositeSource({ b: optOf(B), a: Aold ? { ...optOf(Aold), archive: false, foam: false } : null, waterline: cfg.foam.waterline }));
     return progs[key];
   };
   progFor(byId.P1); progFor(byId.P2, byId.P1); progFor(byId.P2); progFor(byId.P3, byId.P2); progFor(byId.P3);
@@ -173,20 +173,14 @@ window.createReel = async function (canvas, cfg) {
     const wAt2 = (x, y) => M.water[PBS.clamp(Math.round(y), 0, M.h - 1) * w + PBS.clamp(Math.round(x), 0, w - 1)];
     const avoid = P3.figs.filter((f) => f.pose !== 'sail').map((f) => [f.foot[0] - 40 * f.unit, f.foot[1] - 108 * f.unit, f.foot[0] + 40 * f.unit, f.foot[1] + 6 * f.unit]);
     const inAvoid = (x, y) => avoid.some((b) => x > b[0] && x < b[2] && y > b[1] && y < b[3]);
-    // candidatas: granito junto a una orilla verdadera (el agua está debajo de la roca) y el borde de la charca al pie de la roca grande
+    // candidatas: granito justo encima de la orilla verdadera (pie del acantilado y de la sierra) y el borde de la charca
+    const WLp = F.waterline;
+    const yW = (x) => { for (let i = 0; i < WLp.length - 1; i++) if (x <= WLp[i + 1][0]) return PBS.lerp(WLp[i][1], WLp[i + 1][1], PBS.clamp((x - WLp[i][0]) / (WLp[i + 1][0] - WLp[i][0]), 0, 1)); return WLp[WLp.length - 1][1]; };
     const cand = [];
-    const scan = (xa, xb, ya, yb, pool) => {
-      for (let y = ya; y < yb; y += F.cell) for (let x = xa; x < xb; x += F.cell) {
-        const xi = Math.round(x), yi = Math.round(y);
-        if (M.rock[yi * w + xi] < 200) continue;
-        const d = dAt(x, y);
-        if (d < 1 || d > F.band) continue;
-        if (!pool && !(wAt2(x, y + d + 6) > 128 && wAt2(x, y - 12) < 60)) continue;
-        cand.push([x + (rnd() - 0.5) * F.cell * 0.6, y + (rnd() - 0.5) * F.cell * 0.6, d, pool]);
-      }
-    };
-    scan(F.xMin, 2740, 560, 780, 0);
-    scan(2150, 2490, 1290, 1480, 1);
+    for (let x = F.xMin; x < 2700; x += F.cell) {
+      const yw = yW(x);
+      for (let k = 0; k < 3; k++) cand.push([x + (rnd() - 0.5) * F.cell, yw - 2 - 7 * rnd(), 5 + 3 * rnd(), 0]);
+    }
     // curva acumulada de flujo (29,4–39,6 s) para el goteo; ráfagas agrupadas en los arranques 29,40 y 30,63
     const k0 = Math.round(F.t0 * FPS), k1 = Math.round(39.6 * FPS);
     const cum = [0];
@@ -197,10 +191,9 @@ window.createReel = async function (canvas, cfg) {
     const data = [];
     const push = (c, tr) => {
       const [x, y, d] = c;
-      const gx = dAt(x + 3, y) - dAt(x - 3, y), gy = dAt(x, y + 3) - dAt(x, y - 3), gl2 = Math.hypot(gx, gy);
-      if (gl2 < 1e-3) return;
-      const dir = [-gx / gl2, -gy / gl2];
-      const v = 9 + 9 * rnd(), life = PBS.clamp((d + 22 + 34 * rnd()) / v, 2.4, 6.5);
+      // hacia el agua: hacia abajo desde la orilla (con un abanico leve)
+      const ang = Math.PI / 2 + (rnd() - 0.5) * 0.9, dir = [Math.cos(ang), Math.sin(ang)];
+      const v = 8 + 10 * rnd(), life = PBS.clamp((d + 20 + 45 * rnd()) / v, 2.6, 7.0);
       const ex = x + dir[0] * v * life, ey = y + dir[1] * v * life;
       if (inAvoid(x, y) || inAvoid(ex, ey) || inAvoid((x + ex) / 2, (y + ey) / 2)) return;
       const l0 = PBS.clamp((M.lum[Math.round(y) * w + Math.round(x)] - cfg.photoSpec.rinconada.black) / (cfg.photoSpec.rinconada.white - cfg.photoSpec.rinconada.black), 0, 1);

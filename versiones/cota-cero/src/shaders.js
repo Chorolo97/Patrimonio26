@@ -31,7 +31,7 @@ uniform vec4 ext;          // mundo x0,y0,x1,y1
 uniform vec4 fr;           // x0, yTop, mpp, zoom
 uniform vec2 tipPx;        // punta en px (zoom 1)
 uniform float t, S, E, day, wmul, low, cen, ringOpen, trailProg, landOn;
-uniform vec4 on0, on1, am0, am1;
+uniform vec4 on0, am0;
 uniform vec3 cPlate, cLand, cSea, cFoam, cTrail;           // noche
 uniform vec3 cPaper, cGranite, cGrass, cSand, cSeaD, cOchre; // día
 uniform float toothAmt, grainAmt, toneAmt;
@@ -69,14 +69,12 @@ void main(){
     float wave = (fbm3(q + vec2(S*.55, S*.18)) - .5)*2.*9.5;
     float jit = (vnoise(w/300. + 3.) - .5)*2.*.12*Delta*2.;
     float rP = length(P - tipPx);
-    float rip = ripple(rP, on0.x, am0.x) + ripple(rP, on0.y, am0.y) + ripple(rP, on0.z, am0.z) + ripple(rP, on0.w, am0.w)
-              + ripple(rP, on1.x, am1.x) + ripple(rP, on1.y, am1.y) + ripple(rP, on1.z, am1.z) + ripple(rP, on1.w, am1.w);
+    float rip = ripple(rP, on0.x, am0.x) + ripple(rP, on0.y, am0.y) + ripple(rP, on0.z, am0.z) + ripple(rP, on0.w, am0.w);
     psi = (-w.y + wave + jit)/Delta + rip/14.;
     seaHW = (mix(1.25, 1.12, day) + .15*vnoise(w/90.) + wob*.5)*wmul;
   }
   float rP2 = length(P - tipPx);
-  float onGap = day > .5 ? max(max(max(rgap(rP2, on0.x, am0.x), rgap(rP2, on0.y, am0.y)), max(rgap(rP2, on0.z, am0.z), rgap(rP2, on0.w, am0.w))),
-                              max(max(rgap(rP2, on1.x, am1.x), rgap(rP2, on1.y, am1.y)), max(rgap(rP2, on1.z, am1.z), rgap(rP2, on1.w, am1.w)))) : 0.;
+  float onGap = day > .5 ? max(max(rgap(rP2, on0.x, am0.x), rgap(rP2, on0.y, am0.y)), max(rgap(rP2, on0.z, am0.z), rgap(rP2, on0.w, am0.w))) : 0.;
   float seaL = lineCov(isoDist(psi), seaHW);
   seaL *= smoothstep(3.5, 7.5, Dpx);               // la tinta del mar se detiene antes de la costa
 
@@ -187,6 +185,10 @@ float edgeF(vec2 px){
 }
 void main(){
   vec2 px = pxOf(uv);
+  // lejos del borde: una sola capa, sin ruido (el borde nunca se aparta más que la suma de amplitudes)
+  float f0 = dot(px, dir), M = oct.x + oct.z + oct2.x + oct2.z + burr + 10.;
+  if (f0 - pos > M) { o = vec4(texture(ta, uv).rgb, 1.); return; }
+  if (pos - f0 > M) { o = vec4(texture(tb, uv).rgb, 1.); return; }
   float f = edgeF(px);
   float gpx = max(length(vec2(dFdx(f), dFdy(f))), 1e-4);
   float dd = (f - pos)/gpx;                                 // px con signo: + = todavía delante del frente (capa A)

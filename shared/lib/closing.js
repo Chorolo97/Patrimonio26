@@ -9,7 +9,7 @@
     title: 'Día del Patrimonio 2026',
     motto: 'Raíces indígenas:\npasado, presente y futuro',
     date: '3 y 4 de octubre',
-    note: 'Evocación artística realizada con IA',
+    note: null, // por pedido del usuario, sin nota de «Evocación artística realizada con IA» (poner un texto aquí para volver a mostrarla)
   };
 
   function wrapLines(ctx, text, maxW) {
@@ -92,7 +92,7 @@
       { text: T.date, font: 'sans', size: 50, weight: 600, gap: 30, color: ink2 },
     ];
     if (o.logo) items.push({ logo: o.logo, width: o.logoWidth || 620, gap: 62 });
-    items.push({ text: T.note, font: 'sans', size: 34, weight: 400, gap: o.logo ? 60 : 40, color: ink2 });
+    if (T.note) items.push({ text: T.note, font: 'sans', size: 34, weight: 400, gap: o.logo ? 60 : 40, color: ink2 });
     return S.drawBlock(ctx, items, { y: o.y || 330, alpha: a * (o.alpha == null ? 1 : o.alpha), rise: (1 - S.ease((t - o.t0) / 1.2)) * 10, shadow: o.shadow || null });
   };
 })();

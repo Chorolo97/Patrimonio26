@@ -17,9 +17,11 @@ Primera versión completa y editable (v1) de un reel vertical poético, hecho co
 | 14–21 | Misma luz, mirando hacia la ladera: dos pobladores coloniales recorren a pie un sendero del segundo plano con un bulto sencillo. Las tres personas indígenas siguen junto al agua en primer plano; quien estaba agachada se incorpora. | «En tiempos de los primeros pobladores coloniales» (14,5–20,5 s, en dos líneas) |
 | 21–28 | Plano amplio compartido: el grupo indígena camina por la orilla y los colonos siguen a distancia por la ladera. No hay saludo, trato ni enfrentamiento, y el espacio entre ellos queda abierto. | — |
 | 28–35 | La diagonal de la punta rocosa continúa en líneas de espuma blanca sobre el azul (fundido a los 31,3 s). Las figuras salen caminando por el borde del encuadre, no se desvanecen. | «La memoria sigue viva.» (30–34,5 s) |
-| 35–40 | Cierre sereno con cielo claro. Las tres personas indígenas siguen presentes, mirando el mar. El logo y los textos se sostienen hasta el final. | «Día del Patrimonio 2026» / «Raíces indígenas: pasado, presente y futuro» / «3 y 4 de octubre» / «Evocación artística realizada con IA» |
+| 35–40 | Cierre sereno con cielo claro. Las tres personas indígenas siguen presentes, mirando el mar. El logo y los textos se sostienen hasta el final. | «Día del Patrimonio 2026» / «Raíces indígenas: pasado, presente y futuro» / «3 y 4 de octubre» |
 
 Hay presencia humana en pantalla de 0 a 30 s y de 35 a 40 s. El tramo central, de 6 a 28 s (22 s), está dedicado a las personas. Las transiciones son fundidos de 0,6 s centrados en cada corte, incluidos en los 40 s.
+
+> Por pedido del usuario, el cierre ya no incluye la nota «Evocación artística realizada con IA» (quitada de `reel/src/config.js` y de `shared/lib/closing.js`). El MP4 de la v1 en `entregas/` se exportó antes de ese cambio y todavía la muestra.
 
 ## Ver y editar
 

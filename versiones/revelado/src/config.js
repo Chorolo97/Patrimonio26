@@ -48,11 +48,13 @@ window.REEL_CONFIG = {
   burn: { t0: 33.6, t1: 35.0, yFull: 870, yZero: 1010, density: 1.2, edgeAmp: 25, drift: 0.012 },
   grotto: { swashRate: 1.9 },
   // plata de las figuras: luminancia según la profundidad en pantalla (perspectiva aérea) y desenfoque de la foto a esa distancia
-  figureLook: { yNear: 1800, yFar: 900, Lnear: 0.095, Lfar: 0.175, softNear: 0.8, softFar: 2.0, sailL: 0.30, sailSoft: 2.0 },
+  figureLook: { yNear: 1800, yFar: 900, Lnear: 0.095, Lfar: 0.14, softNear: 0.8, softFar: 1.5, sailL: 0.2, sailSoft: 1.6 },
   warmTimes: [0.4, 14.7, 16.4, 22.6, 27, 31],
   rinse: { t0: 12.8, t1: 15.05, drop: 13.1, center: [620, 760], amp: 3, grow: 1.8, wobble: 1.5, deepen: 0.04 },
-  foam: { t0: 29.4, grow: 2.2, shadeT0: 28.6, shadeDur: 2.0, band: 10, cell: 2.0, xMin: 1760, size: [5, 8],
-    bursts: [[29.4, 3], [30.63, 3]], cluster: 70, perCluster: 24, trickle: 240 },
+  foam: { t0: 29.4, grow: 3.2, shadeT0: 28.6, shadeDur: 2.0, cell: 3.0, xMin: 1745, size: [5, 7],
+    bursts: [[29.4, 3], [30.63, 3]], cluster: 60, perCluster: 26, trickle: 260,
+    // orilla verdadera (px de foto): pie del acantilado y de la sierra lejana; la roca está arriba y el agua abajo
+    waterline: [[1700, 716], [1800, 700], [1900, 684], [2000, 668], [2080, 650], [2118, 630], [2135, 613], [2400, 611], [2750, 613], [3030, 616]] },
   onsetThreshold: 0.85, onsetGap: 0.4,
   maskBlur: 3,
 

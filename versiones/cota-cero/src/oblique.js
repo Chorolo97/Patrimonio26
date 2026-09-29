@@ -115,8 +115,10 @@ void main(){
   float wob = (vnoise(px/9.) - .5)*.7;
   // paredes: trazos de fractura trazados en JS (líneas de corriente a lo largo de la pendiente, ver wallHatch)
   vec4 WH = texture(wallH, uv);
-  float steep = step(.5, WH.g)*landM;
-  float fA = WH.r*landM, fB = 0.;
+  // en la punta la roca se dibuja con sus curvas de nivel (las mismas que cruzan la costa y siguen como ecos)
+  float tipK = step(length(w - vec2(${cfg.world.tip[0].toFixed(1)}, ${cfg.world.tip[1].toFixed(1)})), 230. + (vnoise(w/25.) - .5)*60.);
+  float steep = step(.5, WH.g)*landM*(1. - tipK);
+  float fA = WH.r*landM*(1. - tipK), fB = 0.;
   // curvas cada 3 m (con nivel de detalle: nunca a menos de 13 px) solo fuera de las paredes
   vec2 eu = 5./(ext.zw - ext.xy);
   float hs = (B.r*2. + texture(bake, bu + vec2(eu.x, 0.)).r + texture(bake, bu - vec2(eu.x, 0.)).r + texture(bake, bu + vec2(0., eu.y)).r + texture(bake, bu - vec2(0., eu.y)).r)/6.;
@@ -136,7 +138,7 @@ void main(){
   float dotP = fract(bs*2059./(d*11.));
   float trail = (1. - smoothstep(3.5, 6.5, best))*lineCov(abs(dotP - .5)*11., 1.9)*landM*step(.5, 1. - nC)*(1. - steep);
   float outline = min(dj, 1.);
-  float granite = max(max(max(fA, fB), nC), max(outline, cont*step(.5, rock)));
+  float granite = max(max(max(fA, fB), nC), max(outline, cont*max(step(.5, rock), tipK)));
   float grass = cont*(1. - step(.5, rock))*(1. - step(.5, granite));
   o = vec4(granite, grass, trail*(1. - granite), landM);
 }`;

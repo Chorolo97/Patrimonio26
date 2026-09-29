@@ -34,10 +34,11 @@ window.createReel = async function (canvas, cfg) {
   if (onsets.length < 6) onsets = cfg.onsetsFallback.map((t) => ({ t, a: 1 }));
   const rp = cfg.ripple;
   onsets.forEach((o) => { o.A = (rp.maxPx / rp.bigGain) * o.a * (Math.abs(o.t - rp.bigAt) < 0.05 ? rp.bigGain : 1); });
+  // solo los golpes activos (los anillos viven 7 s): como mucho 4 a la vez
   const onsetUniforms = (t) => {
-    const past = onsets.filter((o) => o.t <= t).slice(-8);
-    while (past.length < 8) past.unshift({ t: -100, A: 0 });
-    return { on0: past.slice(0, 4).map((o) => o.t), on1: past.slice(4).map((o) => o.t), am0: past.slice(0, 4).map((o) => o.A), am1: past.slice(4).map((o) => o.A) };
+    const past = onsets.filter((o) => o.t <= t && t - o.t < 7).slice(-4);
+    while (past.length < 4) past.unshift({ t: -100, A: 0 });
+    return { on0: past.map((o) => o.t), am0: past.map((o) => o.A) };
   };
   const at = (k, t) => (audio.missing ? 0.4 : audio.at(k, t));
 
@@ -122,7 +123,7 @@ window.createReel = async function (canvas, cfg) {
       { text: T.motto, font: 'sans', size: 46, weight: 600, gap: 26, maxWidth: 760 },
       { text: T.date, font: 'sans', size: 50, weight: 600, gap: 30 },
       { logo: true, gap: 62 },
-      { text: T.note, font: 'sans', size: 34, weight: 400, gap: 60 },
+      ...(T.note ? [{ text: T.note, font: 'sans', size: 34, weight: 400, gap: 60 }] : []),
     ];
     let y = y0, maxW = 0; const rows = [];
     for (const it of items) {

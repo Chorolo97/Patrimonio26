@@ -83,7 +83,7 @@ window.REEL_CONFIG = {
       { id: 'C1', pose: 'colonBundle', d: 24, x: 905, facing: -1, cut: [24.6, 25.8], order: 'outline' },
       { id: 'C2', pose: 'colonStick', d: 24, x: 985, facing: -1, cut: [25.2, 26.4], order: 'outline' },
       // O6 (futuro): contorno a buril, luego la trama en diagonal y el núcleo desde los pies; ≈70 % a los 40 s
-      { id: 'O6', pose: 'childCrouch', d: 12, x: 250, facing: 1, cut: [37.8, 40.0], cutEnd: 0.7, order: 'future', clearShadows: true },
+      { id: 'O6', pose: 'childCrouch', d: 14.8, x: 262, facing: 1, cut: [37.8, 40.0], cutEnd: 0.7, order: 'future', clearShadows: true },
     ],
     boat: { d: 27, x: 1046, cut: [24.6, 25.4] },
     ship: { x: 930, at: 22.23, dur: 0.9, hull: 56 },
