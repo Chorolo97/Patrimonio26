@@ -10,7 +10,7 @@ import numpy as np
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, 'shared', 'assets', 'audio', 'punta_ballena.mp3')
-OUT = os.path.join(ROOT, 'shared', 'audio', 'features.json')
+OUT = os.environ.get('OUT') or os.path.join(ROOT, 'shared', 'audio', 'features.json')
 FF = os.environ.get('FFMPEG', 'ffmpeg')
 start = float(sys.argv[1]) if len(sys.argv) > 1 else 47.8
 dur = float(sys.argv[2]) if len(sys.argv) > 2 else 40.0

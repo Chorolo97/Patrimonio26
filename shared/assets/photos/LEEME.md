@@ -12,3 +12,6 @@ El repositorio es público y los derechos de reproducción de estas fotos no est
 | `clean/relieve_sin_bosque.jpg` | recorte de `relieve.jpg` sin la franja de bosque plantado | material |
 
 Son fotos del siglo XX con fechas no verificadas: se usan como materia visual y capa de memoria, nunca como documento indígena ni del siglo XVIII.
+| `aerea_punta.jpg` | foto aérea en blanco y negro de la punta rodeada de espuma (enviada por el usuario) | material para `revelado` |
+| `sierras_yerbal.jpg` | foto actual en color de las Sierras del Yerbal (enviada por el usuario; recortada) | material para el tramo de sierras |
+| `yaguaron_iteños_NO_USAR.jpg` | recorte de publicación con marca de agua «Iteños.CCM» y leyenda «pueblo de Yaguarón» | NO usar: marca de agua de terceros y probablemente Yaguarón de Paraguay |
