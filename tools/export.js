@@ -3,6 +3,7 @@
  *   node tools/export.js [--dir reel]              → out/<carpeta>/reel_mudo.mp4
  *   node tools/export.js --dir versiones/x --audio → además out/<carpeta>/reel_con_audio.mp4 (si existe el audio)
  *   node tools/export.js --dir versiones/x --stills 1,9,17 → cuadros sueltos en out/<carpeta>/stills/
+ *   node tools/export.js --dir versiones/x --range 0:1200 → solo esos cuadros, en out/<carpeta>/partes/parte_00000.mp4 (para exportar por tramos y unir después)
  * La carpeta debe tener render.html que exponga window.reelReady y window.frameAt(t).
  * Variables: FFMPEG (ruta a ffmpeg con libx264), WORKERS (páginas en paralelo), CRF, MAXRATE.
  */
@@ -64,8 +65,12 @@ async function main() {
     return;
   }
 
-  const total = Math.round(cfg.duration * cfg.fps);
-  const video = path.join(OUT, 'reel_mudo.mp4');
+  const all = Math.round(cfg.duration * cfg.fps);
+  const range = opt('--range') ? String(opt('--range')).split(':').map(Number) : null;
+  const first = range ? range[0] : 0, last = range ? Math.min(all, range[1]) : all;
+  const total = last - first;
+  if (range) fs.mkdirSync(path.join(OUT, 'partes'), { recursive: true });
+  const video = range ? path.join(OUT, 'partes', `parte_${String(first).padStart(5, '0')}.mp4`) : path.join(OUT, 'reel_mudo.mp4');
   const ff = spawn(FFMPEG, ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-c:v', 'png', '-framerate', String(cfg.fps), '-i', '-',
     '-c:v', 'libx264', '-preset', 'slow', '-crf', process.env.CRF || '19', '-maxrate', process.env.MAXRATE || '9M', '-bufsize', '18M', '-tune', 'film', '-pix_fmt', 'yuv420p', '-r', String(cfg.fps),
     '-frames:v', String(total), '-movflags', '+faststart', video], { stdio: ['pipe', 'inherit', 'inherit'] });
@@ -87,7 +92,7 @@ async function main() {
   await Promise.all(pages.map(async (p) => {
     while (issued < total) {
       const f = issued++;
-      const b64 = await p.evaluate((tt) => window.frameAt(tt), f / cfg.fps);
+      const b64 = await p.evaluate((tt) => window.frameAt(tt), (first + f) / cfg.fps);
       ready.set(f, Buffer.from(b64, 'base64'));
       while (ready.size > 24 && !ready.has(next)) await new Promise((r) => setTimeout(r, 5));
       await write();
@@ -97,6 +102,7 @@ async function main() {
   ff.stdin.end();
   await ffDone;
   console.log(`Video mudo: ${video}`);
+  if (range) { await browser.close(); server.close(); return; }
 
   if (opt('--audio')) {
     const A = cfg.audio;
