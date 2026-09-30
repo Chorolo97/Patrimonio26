@@ -72,7 +72,7 @@ function localAsset(label, relative) {
 function preflight() {
   const sandbox = { window: {} };
   vm.createContext(sandbox);
-  for (const file of ['src/config.js', 'src/v2.js']) {
+  for (const file of ['src/config.js', 'src/v2.js', 'src/vida.js']) {
     const filename = path.join(VERSION, file);
     const source = fs.readFileSync(filename, 'utf8');
     vm.runInContext(source, sandbox, { filename, timeout: 10000 });

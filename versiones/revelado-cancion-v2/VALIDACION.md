@@ -1,5 +1,9 @@
 # Validación de entrega
 
+## Estado tras «más vida» (30/09/2026)
+
+La tabla de exportación de abajo corresponde a la versión anterior: hay que volver a correr `tools/review.js` y exportar. Determinismo comprobado 87 → 106 → 87 s (PNG idéntico). Tiempo por cuadro medido en SwiftShader: 300–550 ms en tramos normales, 640–720 ms en la coda con cierre, 830–910 ms en cuadros de relevo (la versión anterior ya medía 620–830 ms en relevos).
+
 ## Antes de exportar
 
 - Capturas de control de todas las transiciones, introducción, apariciones, espuma, arena y cierre; se repitieron las zonas retocadas. Las capturas y los informes automáticos quedan en `out/revelado-cancion-v2/review/`, fuera de Git.

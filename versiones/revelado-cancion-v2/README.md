@@ -10,6 +10,8 @@ La presencia indígena precede a los colonos, que aparecen aparte a los 99 s. La
 ## Archivos
 - `src/config.js`: base heredada y tiempos de verso.
 - `src/v2.js`: decisiones finales, anotaciones prudentes, fuentes locales y cámaras.
+- `src/live.js`: esqueleto articulado de perfil (marcha con apoyo sin patinar, cuclillas ↔ de pie, brazos por cinemática inversa, cabeza que gira, manto y pelo con viento), barco del siglo XVIII de dos palos, bote de remos y aves.
+- `src/vida.js`: qué hace cada figura viva en cada copia (función pura de t), cámara viva (empuje ≤ 7 %, paralaje entre planos, barridos de luz) y energía del agua con los graves y arranques medidos. Las figuras listadas allí reemplazan a las siluetas fijas del mismo id; main.js las dibuja por cuadro en un lienzo crudo y la GPU las lleva al mismo formato de atlas (revelado, grano, virado y sombra comunes).
 - `src/flat.js`: tratamiento sin deformación de volumen para las matrices planas.
 - `src/silver.js`: dispersión de granos derivados de la foto de granito, activada en la coda desde 138,84 s; no dibuja un fragmento macizo antes de desprenderlos.
 - `plates/`: preparación de matrices y máscaras; derivados visuales excluidos de Git.
@@ -31,6 +33,9 @@ node versiones/revelado-cancion-v2/tools/mobile.js
 Para reproducir la aérea aprobada, conservar `151482.jpg` en la carpeta padre de `virgenes`. El preparador registra el origen y los recortes finales en `privado/manifest_local.json`, después de cualquier sustitución. Si falta ese archivo, conserva la aérea alternativa y lo advierte; será necesario revisar esa variante.
 
 Se pueden definir `NODE_PATH`, `CHROMIUM`, `FFMPEG`, `FFPROBE`, `WORKERS`, `CRF` y `MAXRATE` según la instalación local. Exportaciones en `out/revelado-cancion-v2/`, ignoradas por Git: `reel_con_audio.mp4`, `Punta_Ballena_v2_celular_720p.mp4` y la verificación técnica `export-report.json`. `mobile.js` necesita primero el MP4 completo con audio.
+
+## Relato de las figuras (v2 «más vida»)
+Alba en el canal (19 s): dos personas ya están sobre la roca. 40–50 s: tres caminan en fila el sendero del lomo. 52–54 s: un niño corre hasta la persona adulta junto al Yaguarón; cuervos cruzan el cielo. 56–60 s: alguien señala la lejanía; gaviotas. 63–69 s: el grupo camina el borde de la sierra. Tacuarí: alguien junta en la orilla. Interludio (90–110 s): la vida sigue (recolección, la mayor gira la cabeza, una niña lleva de la mano a la adulta hacia la orilla); desde 91,6 s un barco de dos palos entra por la derecha, fondea (≈100,6 s) y aferra el paño; un bote se acerca (100,9–105,4 s) y los dos colonos aparecen a 105,2 s junto al bote, lejos de las personas indígenas; una persona señala el barco (95,6–100,8 s), sin gesto de conquista. Playa: la mayor mira, alguien trae un atado, la recolectora se pone de pie (135–136 s) y vuelve a juntar; el niño sigue revelándose hasta el final.
 
 ## Investigación y atribución
 Ver `investigacion/palabras_de_la_cancion_v2.md` y `investigacion/imagenes_candidatas_v2.md`. No se encontró una edición accesible que permita declarar confirmada la letra completa. El registro AGADU confirma nombres asociados a la obra; no contiene la letra. Los versos dudosos no se completan ni se rotulan como hechos.

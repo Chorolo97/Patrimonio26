@@ -125,6 +125,7 @@ ${FRONT_UNI}
 ${FRONT_CONSUME}
 uniform sampler2D uPhoto, uMask;
 uniform vec4 geo, geo2, par, par2, par3;
+uniform vec4 uPlx, uSweep;   // paralaje (dx, dy px de foto a profundidad 1; y lejos, y cerca) | barrido de luz (posición, ángulo, ancho, ganancia)
 struct PR { float Dbg; float foam; float arch; };
 `;
 
@@ -162,6 +163,11 @@ PR shade(vec2 p, float dev){
   PR r; r.Dbg = 0.; r.foam = 0.; r.arch = 0.;
   vec2 q = geo.xy + ((p - geo2.xy)/geo.w + geo2.xy)/geo.z;   // px de la foto original
   vec2 isz = 1. / geo2.zw;
+  // paralaje: lo cercano (abajo) se corre más que lo lejano; el cielo apenas en contra
+  if (uPlx.x != 0. || uPlx.y != 0.) {
+    float sk0 = texture(uMask, vec2(q.x*isz.x, 1. - q.y*isz.y)).a;
+    q -= uPlx.xy * (smoothstep(uPlx.z, uPlx.w, q.y) - 0.12*sk0);
+  }
   vec4 M = texture(uMask, vec2(q.x*isz.x, 1. - q.y*isz.y));
   float water = M.r, rock = M.g, sand = M.b, skyM = M.a;
   float live = dev;
@@ -171,6 +177,10 @@ PR shade(vec2 p, float dev){
   float L0 = P.r, Ll = P.a;
   float lightMul = 1.;
   __LIVE__
+  if (uSweep.w > 0. && live > 0.) {   // barrido lento de luz (nube que se abre): banda ancha y suave
+    float sd = (dot(p, vec2(cos(uSweep.y), sin(uSweep.y))) - uSweep.x) / uSweep.z;
+    Ll *= 1. + uSweep.w * live * (1. - 0.75*skyM) * exp(-sd*sd) * (0.6 + 0.4*smoothstep(0.15, 0.6, L0));
+  }
   float Dt = -0.30103 * log2(max(Ll, 0.02)/LP);
   float D;
 #if ARCHIVE
@@ -685,7 +695,8 @@ ${FRONT_UNI}
 ${FRONT_CONSUME}
 uniform sampler2D uFig;
 uniform vec4 geo, geo2, uBox, uGb, uGo;   // cámara | caja del atlas y del grupo (px de foto) y desplazamiento del grupo
-uniform float uDevG, uCW, uSeed, uGrpSet;
+uniform float uDevG, uCW, uSeed, uGrpSet, uLS, uPlxFoot;
+uniform vec4 uPlx;
 // figura: cobertura × nucleación (grumos que se juntan, del núcleo al borde), luminancia propia bajo la misma luz
 void main(){
   vec2 p = vec2(uv.x * 1080., (1. - uv.y) * 1920.);
@@ -698,12 +709,13 @@ void main(){
 #endif
   float devFig = uIsOld > 0.5 ? 1. : f.devFig;
   vec2 q = geo.xy + ((f.pr - geo2.xy)/geo.w + geo2.xy)/geo.z;   // px de la foto original
+  if (uPlx.x != 0. || uPlx.y != 0.) q -= uPlx.xy * smoothstep(uPlx.z, uPlx.w, uPlxFoot > 0. ? uPlxFoot : q.y);
   float devF = devFig;
   if (uGrpSet > 0.5) {
     q -= uGo.xy;
     if (q.x < uGb.x || q.y < uGb.y || q.x > uGb.z || q.y > uGb.w) { o = vec4(0.); return; }
     devF = uDevG * step(0.15, devFig);
-  }
+  } else q -= uGo.xy;
   vec2 bq = (q - uBox.xy) / uBox.zw;
   if (bq.x <= 0. || bq.y <= 0. || bq.x >= 1. || bq.y >= 1. || devF <= 0.) { o = vec4(0.); return; }
   vec4 F = textureLod(uFig, vec2(bq.x, 1. - bq.y), 0.);
@@ -715,9 +727,37 @@ void main(){
     float thr = uCW*(1. - F.a) + (1. - uCW)*smoothstep(0.2, 0.8, nucN(q, sd));
     float nuc = smoothstep(thr - 0.03, thr + 0.03, devF*1.06);
     c = F.r * nuc;
-    if (c > 0.) Df = -0.30103 * log2(max(F.b * 0.4 * lm, 0.02)/LP);
+    if (c > 0.) Df = -0.30103 * log2(max(F.b * uLS * lm, 0.02)/LP);
   }
   o = vec4(sh, Df, c, 0.);
+}
+`;
+  };
+
+  // ---------- figuras vivas: lienzo crudo (R cobertura, G sombra, B paño claro) → atlas (R cobertura blanda, G sombra, B luz propia /0,8, A núcleo) ----------
+  RV.liveAtlasSource = function () {
+    return `#version 300 es
+precision highp float;
+in vec2 uv; out vec4 o;
+uniform sampler2D uRaw;
+uniform vec2 uPx, uRim;
+uniform float uSoft, uLitR, uCoreR, uShR, uLv, uSailLv;
+float lodOf(float r){ return max(0., log2(max(r, 1.)) - 0.35); }
+vec4 blur9(vec2 st, float r){   // 5 muestras: centro y cuatro diagonales (bilineales: cubren un disco de radio ≈ r)
+  float l = max(0., lodOf(r) - 1.2);
+  vec2 d = uPx * r * 0.55;
+  return textureLod(uRaw, st, l) * 0.28 + (textureLod(uRaw, st + d, l) + textureLod(uRaw, st - d, l) + textureLod(uRaw, st + vec2(d.x, -d.y), l) + textureLod(uRaw, st + vec2(-d.x, d.y), l)) * 0.18;
+}
+void main(){
+  vec2 st = uv;
+  vec4 bc = blur9(st, uSoft);
+  float cov = bc.r;
+  float ll = lodOf(uLitR);
+  float lit = clamp(textureLod(uRaw, st, ll).r - textureLod(uRaw, st + uRim*uPx, ll).r, 0., 1.);
+  float sh = textureLod(uRaw, st, lodOf(uShR)).g;
+  float core = textureLod(uRaw, st, lodOf(uCoreR)).r;
+  float Lb = mix(uLv, uSailLv, clamp(bc.b, 0., 1.));
+  o = vec4(cov, sh, min(1., Lb + lit*(0.055/0.8)), min(1., core*1.1));
 }
 `;
   };

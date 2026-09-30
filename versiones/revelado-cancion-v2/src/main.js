@@ -162,7 +162,8 @@ window.createReel = async function (canvas, cfg) {
   const FL = cfg.figureLook;
   const prints = {};
   for (const pc of cfg.prints) {
-    const kind = pc.photo, figs = cfg.figures.filter((f) => f.print === pc.id);
+    const liveIds = new Set((cfg.live || []).map((l) => l.id));
+    const kind = pc.photo, figs = cfg.figures.filter((f) => f.print === pc.id && !liveIds.has(f.id));
     const gdef = (cfg.groups && cfg.groups[pc.id]) || {};
     const list = figs.map((f) => {
       const ys = (f.foot[1] - pc.cam[0][2]) * pc.scale, depth = PBS.clamp((FL.yNear - ys) / (FL.yNear - FL.yFar), 0, 1);
@@ -172,6 +173,26 @@ window.createReel = async function (canvas, cfg) {
     });
     const atl = RV.buildFigureAtlas(list, cfg.light[pc.photo], pc.atlasS || 2);
     const P = { ...pc, figs: list, gdef, hasB: list.some((f) => f.group), groupIds: [...new Set(list.filter((f) => f.group).map((f) => f.group))].sort() };
+    // figuras vivas (src/vida.js): se dibujan por cuadro en un lienzo crudo y la GPU las convierte al formato del atlas
+    P.live = (cfg.live || []).filter((l) => l.print === pc.id).map((l) => {
+      const unit = l.unit != null ? l.unit : l.sizeRule ? unitOf({ foot: l.anchor, sizeY: l.sizeY, size: l.kind === 'child' ? 'child' : 'adult' }, kind) : (l.h != null ? l.h / 100 : 1) * (l.kind === 'child' ? SR.child : 1);
+      const ys = (l.anchor[1] - pc.cam[0][2]) * pc.scale, depth = PBS.clamp((FL.yNear - ys) / (FL.yNear - FL.yFar), 0, 1);
+      const L = l.L != null ? l.L : PBS.lerp(FL.Lnear, FL.Lfar, depth);
+      const soft = (l.soft != null ? l.soft : PBS.lerp(FL.softNear, FL.softFar, depth)) / pc.scale;
+      const S = l.S || Math.max(0.9, Math.min(2.6, pc.scale * 0.92)), bu = l.box || [-34, -10, 44, 118], um = l.boxUnit || unit;
+      const fa = l.facing || 1, bx0 = fa > 0 ? bu[0] : -bu[2], bx1 = fa > 0 ? bu[2] : -bu[0];
+      // la caja incluye la sombra proyectada (hacia +x y hacia abajo en la foto, según la luz de la copia)
+      const Lt = cfg.light[pc.photo] || cfg.light[pc.id] || { kx: 0.4, ky: 0.1 }, shd = l.script === 'person' || l.script === 'seated' ? 118 : 0;
+      const box = [Math.floor(l.anchor[0] + Math.min(bx0 * um, bx0 * um + Math.min(0, Lt.kx) * shd * um)), Math.floor(l.anchor[1] - bu[3] * um), 0, 0];
+      box[2] = Math.ceil(l.anchor[0] + bx1 * um + Math.max(0, Lt.kx) * shd * um) - box[0]; box[3] = Math.ceil(l.anchor[1] - bu[1] * um + Math.max(0, Lt.ky) * shd * um) - box[1];
+      const W = Math.ceil(box[2] * S), H = Math.ceil(box[3] * S);
+      const c = document.createElement('canvas'); c.width = W; c.height = H;
+      const tx = G.createTexture();
+      G.bindTexture(G.TEXTURE_2D, tx);
+      G.texParameteri(G.TEXTURE_2D, G.TEXTURE_MIN_FILTER, G.LINEAR_MIPMAP_LINEAR); G.texParameteri(G.TEXTURE_2D, G.TEXTURE_MAG_FILTER, G.LINEAR);
+      G.texParameteri(G.TEXTURE_2D, G.TEXTURE_WRAP_S, G.CLAMP_TO_EDGE); G.texParameteri(G.TEXTURE_2D, G.TEXTURE_WRAP_T, G.CLAMP_TO_EDGE);
+      return { ...l, unit, L, soft, S, fa, box, W, H, c, g: c.getContext('2d', { willReadFrequently: true }), raw: tx, fbo: gl.target(W, H), light: cfg.light[pc.photo] || cfg.light[pc.id] || { kx: 0.4, ky: 0.1, rim: [1.2, 1.0] }, tDone: null };
+    });
     P.figA = atl.A ? gl.texture(atl.A) : dummy; P.boxA = atl.boxA || [-1e5, -1e5, 1, 1];
     P.figB = atl.B ? gl.texture(atl.B) : dummy; P.boxB = atl.boxB || [-1e5, -1e5, 1, 1];
     P.gbox = [1, 2, 3, 4].map((g) => atl.groups[g] || [1e5, 1e5, -1e5, -1e5]);
@@ -401,10 +422,27 @@ window.createReel = async function (canvas, cfg) {
     }
   };
 
+  // cámara viva (src/vida.js, C.motion): paralaje entre planos y barridos de luz, lentos y deterministas
+  const MO = cfg.motion || {};
+  const plxAt = (P, t) => {
+    const m = MO[P.id]; if (!m || !m.plx) return [0, 0, 0, 1];
+    const [t0, t1, dx, dy, y0, y1] = m.plx, u = PBS.ease(PBS.clamp((t - t0) / (t1 - t0), 0, 1));
+    return [dx * u, dy * u, y0, y1];
+  };
+  const sweepAt = (P, t) => {
+    const m = MO[P.id]; if (!m || !m.sweep) return [0, 0, 1, 0];
+    for (const [t0, t1, deg, w, gain] of m.sweep) if (t > t0 && t < t1) {
+      const a = deg * Math.PI / 180, u = (t - t0) / (t1 - t0), c = Math.cos(a), s = Math.sin(a);
+      const ext = [[0, 0], [1080, 0], [0, 1920], [1080, 1920]].map(([x, y]) => x * c + y * s);
+      const lo = Math.min(...ext) - 2 * w, hi = Math.max(...ext) + 2 * w;
+      return [PBS.lerp(lo, hi, u), a, w, gain * Math.sin(Math.PI * u) ** 0.5];
+    }
+    return [0, 0, 1, 0];
+  };
   const printU = (P, t, isOld) => {
     const [ox, oy, z] = camAt(P, t), ms = mat[P.photo], c = P.c || [540, 960];
     const [par, par2, par3] = parFor(P, t);
-    return { uPhoto: tex[P.photo].photo, uMask: tex[P.photo].mask, geo: [ox, oy, P.scale, z], geo2: [c[0], c[1], ms.w, ms.h], par, par2, par3 };
+    return { uPhoto: tex[P.photo].photo, uMask: tex[P.photo].mask, geo: [ox, oy, P.scale, z], geo2: [c[0], c[1], ms.w, ms.h], par, par2, par3, uPlx: plxAt(P, t), uSweep: sweepAt(P, t) };
   };
   // caja de fotos → rectángulo de pantalla (tijera) para el pase de figuras
   const screenRect = (P, t, box) => {
@@ -417,27 +455,97 @@ window.createReel = async function (canvas, cfg) {
     x0 = Math.max(0, Math.floor(x0 - 26)); y0 = Math.max(0, Math.floor(y0 - 26)); x1 = Math.min(cfg.width, Math.ceil(x1 + 26)); y1 = Math.min(cfg.height, Math.ceil(y1 + 26));
     return x1 > x0 && y1 > y0 ? [x0, y0, x1 - x0, y1 - y0] : null;
   };
+  // ---------- figuras vivas: estado → lienzo crudo → atlas en GPU ----------
+  let liveProg = null;
+  const groupTravel = (P, g, t) => { const G0 = P.gdef[g]; if (!G0 || !G0.tab) return 0; const f = PBS.clamp(t * FPS, 0, N), i = Math.floor(f), u = f - i; return (G0.tab[i] * (1 - u) + G0.tab[i + 1] * u) * Math.hypot(G0.vel[0], G0.vel[1]); };
+  const liveEnv = (P, t) => ({
+    t, P, low: at(A.low, t), lowAvg: avg(A.low, t, 1), rms: at(A.rms, t), voice: at(A.voice, t), surge: surge(t), onsets,
+    dev: (g) => devGroup(P, g, t), travel: (g, tt = t) => groupTravel(P, g, tt), gOff: (g, tt = t) => groupOffset(P, g, tt), cam: camAt(P, t),
+  });
+  const liveUpdate = (lv, t) => {
+    if (lv.tDone === t) return lv.st;
+    const P = lv._P, env = liveEnv(P, t);
+    const st = cfg.liveScript[lv.script](lv, t, env, RV);
+    lv.st = st; lv.tDone = t;
+    if (!st || st.hide) return st;
+    const g = lv.g, S = lv.S;
+    const LP = window.__lprof, q0 = LP ? performance.now() : 0;
+    g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1; g.fillStyle = '#000'; g.fillRect(0, 0, lv.W, lv.H);
+    g.globalCompositeOperation = 'lighten';
+    const fx = (lv.anchor[0] - lv.box[0]) * S, fy = (lv.anchor[1] - lv.box[1]) * S;
+    const s = (st.unit || lv.unit) * S, fa = lv.fa;
+    // sombra (G): proyectada con la luz de la copia, contacto con el suelo; o el reflejo si st.shadow lo dibuja
+    g.save();
+    if (st.shadow) { g.setTransform(fa * s, 0, 0, -s, fx, fy); st.shadow(g, 'rgb(0,255,0)'); }
+    else if (st.draw && !st.noShadow) {
+      const Lt = lv.light, hgt = 100 * s;
+      const gr = g.createLinearGradient(fx, fy, fx + Lt.kx * hgt, fy + Lt.ky * hgt);
+      gr.addColorStop(0, 'rgb(0,108,0)'); gr.addColorStop(0.35, 'rgb(0,67,0)'); gr.addColorStop(1, 'rgb(0,24,0)');
+      g.fillStyle = gr; g.setTransform(fa * s, 0, Lt.kx * s, Lt.ky * s, fx, fy); st.draw(g, false);
+      const ct = st.contact || [-9, 12], cx0 = ct[0] * fa, cx1 = ct[1] * fa, cxm = (cx0 + cx1) / 2, hw = Math.abs(cx1 - cx0) * 0.5;
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.fillStyle = 'rgb(0,128,0)'; g.beginPath(); g.ellipse(fx + cxm * s, fy + 0.3 * s, hw * s * 0.85, Math.max(1.2 * S, 1.5 * s), 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = 'rgb(0,42,0)'; g.beginPath(); g.ellipse(fx + cxm * s, fy + 0.6 * s, hw * s * 1.4, Math.max(1.8 * S, 2.2 * s), 0, 0, Math.PI * 2); g.fill();
+    }
+    g.restore();
+    // figura (R) y paño claro (B)
+    g.save(); g.setTransform(fa * s, 0, 0, -s, fx, fy); g.fillStyle = '#f00'; if (st.draw) st.draw(g, true); g.restore();
+    if (LP) { g.getImageData(0, 0, 1, 1); LP.draw = (LP.draw || 0) + performance.now() - q0; }
+    const q1 = LP ? performance.now() : 0;
+    G.bindTexture(G.TEXTURE_2D, lv.raw);
+    G.pixelStorei(G.UNPACK_FLIP_Y_WEBGL, true);
+    G.texImage2D(G.TEXTURE_2D, 0, G.RGBA, G.RGBA, G.UNSIGNED_BYTE, lv.c);
+    G.pixelStorei(G.UNPACK_FLIP_Y_WEBGL, false);
+    if (LP) { G.finish(); LP.up = (LP.up || 0) + performance.now() - q1; }
+    const q2 = LP ? performance.now() : 0;
+    G.generateMipmap(G.TEXTURE_2D);
+    if (LP) { G.finish(); LP.mip = (LP.mip || 0) + performance.now() - q2; LP.px = (LP.px || 0) + lv.W * lv.H; }
+    liveProg = liveProg || gl.program(RV.liveAtlasSource());
+    const rl = Math.hypot(lv.light.rim[0], lv.light.rim[1]) || 1, u = st.unit || lv.unit;
+    const dsh = 5.5 * s * (st.rimK || 1);
+    G.bindBuffer(G.ARRAY_BUFFER, triBuf);
+    gl.draw(liveProg, { uRaw: lv.raw, uPx: [1 / lv.W, 1 / lv.H], uSoft: Math.max(0.5, (st.soft || lv.soft) * S), uLitR: 1.6 * s, uCoreR: 4.5 * s * (st.coreK || 1), uShR: st.shR || (1.2 * S + 0.012 * 100 * s),
+      uRim: [lv.light.rim[0] / rl * dsh * fa, -lv.light.rim[1] / rl * dsh], uLv: PBS.clamp((st.L || lv.L) / 0.8, 0, 1), uSailLv: PBS.clamp((st.sailL || lv.sailL || lv.L) / 0.8, 0, 1) }, lv.fbo);
+    return st;
+  };
+
   // pase de figuras: un dibujo por grupo, recortado a su recuadro; devuelve si hay algo dibujado
   const figPass = (P, t, isOld, common, dualPass, front) => {
     const sets = [];
+    const lq0 = window.__prof ? (G.finish(), performance.now()) : 0;
+    for (const lv of P.live) {
+      lv._P = P;
+      const st = liveUpdate(lv, t);
+      if (!st || st.hide) continue;
+      const g0 = lv.group || 0, off = st.off || [0, 0];
+      const go = g0 ? groupOffset(P, g0, t) : [0, 0];
+      let devG = st.devG != null ? st.devG : (g0 ? (isOld ? 1 : devGroup(P, g0, t)) : 1);
+      if (g0 && devG <= 0.0005) continue;
+      const b = lv.box, gb = [b[0], b[1], b[0] + b[2], b[1] + b[3]], o2 = [go[0] + off[0], go[1] + off[1]];
+      sets.push({ grp: g0 || st.devG != null ? 1 : 0, tex: lv.fbo.tex, box: b, gb, go: o2, devG, cw: lv.coreW != null ? lv.coreW : 0.78, seed: 31 + (lv.seed || 0), live: 1, foot: lv.anchor[1] + o2[1] + (st.footDy || 0), rect: [gb[0] + o2[0], gb[1] + o2[1], gb[2] + o2[0], gb[3] + o2[1]] });
+    }
     if (P.boxA[0] > -1e4) sets.push({ grp: 0, tex: P.figA, box: P.boxA, gb: [0, 0, 0, 0], go: [0, 0], devG: 1, cw: 0.82, seed: 17, rect: [P.boxA[0], P.boxA[1], P.boxA[0] + P.boxA[2], P.boxA[1] + P.boxA[3]] });
     for (const g of P.groupIds) {
       const gb = P.gbox[g - 1], go = groupOffset(P, g, t), devG = isOld ? 1 : devGroup(P, g, t);
       if (devG <= 0.0005) continue;
       sets.push({ grp: g, tex: P.figB, box: P.boxB, gb, go, devG, cw: P.gdef[g] && P.gdef[g].coreW != null ? P.gdef[g].coreW : 0.72, seed: 29, rect: [gb[0] + go[0], gb[1] + go[1], gb[2] + go[0], gb[3] + go[1]] });
     }
+    if (window.__prof) { G.finish(); window.__prof.live = (window.__prof.live || 0) + performance.now() - lq0; }
     if (!sets.length) return null;
     const fbo = isOld ? fboFA : fboFB;
     const rects = [];
     G.bindFramebuffer(G.FRAMEBUFFER, fbo.fb); G.disable(G.SCISSOR_TEST); G.clearColor(0, 0, 0, 0); G.clear(G.COLOR_BUFFER_BIT);
     G.enable(G.BLEND); G.blendEquation(G.MAX); G.blendFunc(G.ONE, G.ONE); G.enable(G.SCISSOR_TEST);
     const cam = printU(P, t, isOld);
+    const fq0 = window.__prof ? (G.finish(), performance.now()) : 0;
     for (const s of sets) {
       const r = screenRect(P, t, s.rect); if (!r) continue;
+      if (window.__prof) { G.finish(); (window.__prof.sets = window.__prof.sets || []).push(r[2] + 'x' + r[3]); }
       rects.push([r[0], r[1], r[0] + r[2], r[1] + r[3]]);
       G.scissor(r[0], cfg.height - r[1] - r[3], r[2], r[3]);
-      gl.draw(figProgFor(P, front), { ...common, geo: cam.geo, geo2: cam.geo2, uFig: s.tex, uBox: s.box, uGb: s.gb, uGo: [s.go[0], s.go[1], 0, 0], uDevG: s.devG, uCW: s.cw, uSeed: s.seed, uGrpSet: s.grp ? 1 : 0, uIsOld: isOld ? 1 : 0, uDualPass: dualPass }, fbo);
+      gl.draw(figProgFor(P, front), { ...common, geo: cam.geo, geo2: cam.geo2, uFig: s.tex, uBox: s.box, uGb: s.gb, uGo: [s.go[0], s.go[1], 0, 0], uDevG: s.devG, uCW: s.cw, uSeed: s.seed, uGrpSet: s.grp ? 1 : 0, uIsOld: isOld ? 1 : 0, uDualPass: dualPass, uLS: s.live ? 0.8 : 0.4, uPlx: cam.uPlx, uPlxFoot: s.foot || 0 }, fbo);
     }
+    if (window.__prof) { G.finish(); window.__prof.fig = (window.__prof.fig || 0) + performance.now() - fq0; }
     G.disable(G.SCISSOR_TEST); G.disable(G.BLEND); G.blendEquation(G.FUNC_ADD);
     return rects.length ? [rects.reduce((u, r) => [Math.min(u[0], r[0]), Math.min(u[1], r[1]), Math.max(u[2], r[2]), Math.max(u[3], r[3])])] : null;
   };
@@ -497,7 +605,7 @@ window.createReel = async function (canvas, cfg) {
     const sg = surge(t);
     const isLab = R.type === 'lab';
     const common = {
-      uT: mt, uTr: t, uS: S, uWt: W2(t), uLow: at(A.low, t), uHigh: at(A.high, t), uRms: at(A.rms, t), uWtex: wTex, uNoise: noiseTex, uNW: NW,
+      uT: mt, uTr: t, uS: S, uWt: W2(t), uLow: Math.min(1.25, (cfg.lowGain || 1) * at(A.low, t) + (cfg.surgeLow || 0) * sg), uHigh: at(A.high, t), uRms: at(A.rms, t), uWtex: wTex, uNoise: noiseTex, uNW: NW,
       uMen: [R.t0, R.s0, R.v, R.a], uMen2: [R.bow, R.noiseAmp, R.seed, menVisible(R, t) ? 1 : 0], uMen3: [R.figFront, R.tau0, R.induction, R.wet], uMen4: [isLab ? 1 : 0, R.delay || 0, 0, 0],
       uFigTau: R.figTau, uDevAll: front ? -1 : 1,
       uRinse: [rn.wobble * rinseW, ringR, ringA, rn.deepen * rinseW],

@@ -96,5 +96,5 @@ C.prints.find(p=>p.id==='playa').fx.erode={t0:138.84,t1:150,max:.95};
 const C=window.REEL_CONFIG;
 // Sustitutos SOLO para desarrollo: si faltan photos/v2/* o plates/*, se cargan las copias de desarrollo y se avisa
 // («SUSTITUTO DE DESARROLLO» en los avisos del export). Con los assets reales presentes no interviene. Poner false para exigir los reales.
-C.devFallback={enabled:true,map:[['photos/v2/','photos/v2_sustitutos/'],['plates/','plates/_dev/']]};
+C.devFallback={enabled:false,map:[['photos/v2/','photos/v2_sustitutos/'],['plates/','plates/_dev/']]};
 })();
