@@ -9,3 +9,7 @@ shared/assets/audio/*
 shared/assets/photos/*
 !shared/assets/photos/LEEME.md
 privado/
+# V2: derivados visuales generados localmente. Solo fuentes y documentación públicas.
+versiones/revelado-cancion-v2/plates/*.jpg
+versiones/revelado-cancion-v2/plates/*.png
+versiones/revelado-cancion-v2/plates/__pycache__/
