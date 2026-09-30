@@ -1,0 +1,31 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+@font-face{font-family:EBG;src:url(file:///home/user/Patrimonio26/shared/assets/fonts/EBGaramond-latin.woff2);font-weight:400 800}
+@font-face{font-family:EBG;font-style:italic;src:url(file:///home/user/Patrimonio26/shared/assets/fonts/EBGaramond-Italic-latin.woff2);font-weight:400 800}
+@font-face{font-family:SS3;src:url(file:///home/user/Patrimonio26/shared/assets/fonts/SourceSans3-latin.woff2);font-weight:200 900}
+html,body{margin:0;width:1080px;height:1920px;overflow:hidden;background:#f3ebdb}
+#bg,#ov,#grain,#txt,#top{position:absolute;left:0;top:0;width:1080px;height:1920px}
+#grain{mix-blend-mode:overlay;opacity:.5}
+.tx{position:absolute;left:180px;width:720px;text-align:center}
+.w{font-family:EBG;font-weight:400;line-height:1;letter-spacing:.01em;white-space:nowrap}
+.g{font-family:SS3;font-weight:400;letter-spacing:.06em;white-space:nowrap;margin-top:26px}
+</style></head><body>
+<img id=bg><svg id=ov viewBox="0 0 1080 1920"></svg><img id=grain src="grain.png"><svg id=top viewBox="0 0 1080 1920"></svg><div id=txt></div>
+<script src="fig.js"></script><script src="map.js"></script><script src="frames.js"></script>
+<script>
+const id=location.hash.slice(1), S=FRAMES[id];
+if(S.bg) document.getElementById('bg').src=S.bg; else document.getElementById('bg').remove();
+if(S.grain!=null) document.getElementById('grain').style.opacity=S.grain;
+const defs='<defs><filter id="soft"><feGaussianBlur stdDeviation="3"/></filter><filter id="edge"><feGaussianBlur stdDeviation=".45"/></filter></defs>';
+document.getElementById('ov').innerHTML=defs+'<g filter="url(#edge)">'+(S.overlay?S.overlay():'')+'</g>';
+document.getElementById('top').innerHTML=defs+(S.top?S.top():'');
+const T=document.getElementById('txt');
+if(S.veil){const v=S.veil;document.getElementById('ov').insertAdjacentHTML('afterbegin',`<defs><radialGradient id=vg><stop offset=0 stop-color='${v.c||'#F2EADB'}' stop-opacity='${v.a||.6}'/><stop offset=.55 stop-color='${v.c||'#F2EADB'}' stop-opacity='${(v.a||.6)*.6}'/><stop offset=1 stop-color='${v.c||'#F2EADB'}' stop-opacity=0 /></radialGradient></defs><ellipse cx=540 cy='${v.y}' rx='${v.rx||520}' ry='${v.ry||230}' fill='url(#vg)'/>`);}
+if(S.text){const t=S.text;const d=document.createElement('div');d.className='tx';d.style.top=t.top+'px';
+ d.innerHTML='<div class=w style="font-size:'+(t.size||116)+'px;color:'+(t.color||'#2a2019')+';font-style:'+(t.italic?'italic':'normal')+'">'+t.word+'</div>'+(t.gloss?'<div class=g style="font-size:'+(t.gsize||36)+'px;color:'+(t.gcolor||'#4b3e33')+'">'+t.gloss+'</div>':'');
+ T.appendChild(d);
+ // encoger si excede 720
+ for(const el of d.children){let fs=parseFloat(el.style.fontSize);while(el.scrollWidth>720&&fs>20){fs-=2;el.style.fontSize=fs+'px';}}
+}
+if(S.html){T.insertAdjacentHTML('beforeend',S.html);for(const el of T.querySelectorAll('.w,.g')){let fs=parseFloat(getComputedStyle(el).fontSize);while(el.scrollWidth>720&&fs>20){fs-=2;el.style.fontSize=fs+'px';}}}
+window.DONE=1;
+</script></body></html>

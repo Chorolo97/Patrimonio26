@@ -1,0 +1,53 @@
+{
+ "mar": {
+  "src": "aerea.jpg",
+  "x0": 900,
+  "dev": [
+   380,
+   900
+  ],
+  "devAmt": 1
+ },
+ "tacuari": {
+  "src": "tacuari.jpg",
+  "plate": 1,
+  "x0": 300
+ },
+ "espuma": {
+  "src": "canal.jpg",
+  "x0": 416
+ },
+ "barco": {
+  "src": "rinconada.jpg",
+  "x0": 1950,
+  "patch": [
+   [
+    760,
+    0,
+    320,
+    90,
+    0,
+    130,
+    20
+   ],
+   [
+    815,
+    1280,
+    265,
+    380,
+    -270,
+    0,
+    40
+   ]
+  ]
+ },
+ "carape": {
+  "src": "carape.jpg",
+  "plate": 1,
+  "x0": 400
+ },
+ "arena": {
+  "src": "playa.jpg",
+  "x0": 420
+ }
+}
