@@ -15,3 +15,6 @@ versiones/revelado-cancion-v2/plates/*.png
 versiones/revelado-cancion-v2/plates/__pycache__/
 # V2: sustitutos grises solo para desarrollo (no son las matrices reales).
 versiones/revelado-cancion-v2/plates/_dev/
+# V3: copias viradas, ilustración final y trazado de la punta, generados localmente (tools/prepare.py, tools/peninsula.py).
+versiones/revelado-cancion-v3/plates/*
+!versiones/revelado-cancion-v3/plates/LEEME.md
