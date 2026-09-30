@@ -281,7 +281,8 @@ window.createReel = async function (canvas, cfg) {
     const tot = cum[cum.length - 1];
     const invF = (u) => { const v = u * tot; let lo = 0, hi = cum.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (cum[m] < v) lo = m; else hi = m; } return (k0 + lo + (v - cum[lo]) / Math.max(1e-6, cum[hi] - cum[lo])) / FPS; };
     const near = (t0) => { let best = t0; for (const o of onsets) if (Math.abs(o - t0) < 0.25) best = o; return best; };
-    const avoid = P.figs.map((f) => [f.foot[0] - 44 * f.unit, f.foot[1] - 112 * f.unit, f.foot[0] + 44 * f.unit, f.foot[1] + 8 * f.unit]);
+    const avoid = P.figs.map((f) => [f.foot[0] - 44 * f.unit, f.foot[1] - 112 * f.unit, f.foot[0] + 44 * f.unit, f.foot[1] + 8 * f.unit])
+      .concat((P.live || []).filter((l) => l.script === 'person' || l.script === 'seated').map((l) => [l.anchor[0] - 60 * l.unit, l.anchor[1] - 120 * l.unit, l.anchor[0] + 60 * l.unit, l.anchor[1] + 10 * l.unit]));
     const inAvoid = (x, y) => avoid.some((b) => x > b[0] && x < b[2] && y > b[1] && y < b[3]);
     const data = [];
     const push = (c, tr) => {

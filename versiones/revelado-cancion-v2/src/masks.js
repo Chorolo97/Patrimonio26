@@ -157,10 +157,10 @@
     }
     // retoques: parches clonados [dx,dy,sx,sy,w,h,pluma] (px de foto)
     for (const r of pc.patches || []) {
-      const [dx, dy, pw, ph, feather, sx, sy] = r.map((v, i) => (i === 4 ? v : v));
+      const [dx, dy, pw, ph, feather, sx, sy, openTop] = r;
       const X0 = Math.round(dx * up), Y0 = Math.round(dy * up), SX = Math.round(sx * up), SY = Math.round(sy * up), PW = Math.round(pw * up), PH = Math.round(ph * up), FE = feather * up;
       for (let y = 0; y < PH; y++) for (let x = 0; x < PW; x++) {
-        const ex = Math.min(x, PW - 1 - x) / FE, ey = Math.min(y, PH - 1 - y) / FE;
+        const ex = Math.min(x, PW - 1 - x) / FE, ey = (openTop ? PH - 1 - y : Math.min(y, PH - 1 - y)) / FE;   // openTop: el parche llega hasta el borde
         const a = Math.min(1, Math.min(ex, ey)); const aa = a * a * (3 - 2 * a);
         const di = (Y0 + y) * tw + X0 + x, si = (SY + y) * tw + SX + x;
         lum[di] = lum[di] * (1 - aa) + lum[si] * aa;

@@ -554,19 +554,31 @@ void main(){
     Ll *= 1. + (0.09*sv + 0.06*sv2)*sand*live*smoothstep(900., 1000., q.y);
     // la plata de las matas se deshace en arena (par3.x = avance 0..1): la mata pierde masa a granos hasta parecerse a la arena de al lado
     if (par3.x > 0.001) {
-      float tw_ = 0.;
+      // cada mata toma la arena real de su costado: de tres muestras desplazadas gana la más parecida a la arena media (nunca una hebra)
+      float tw_ = 0., Ls = 0.;
+      float Lref = textureLod(uPhoto, vec2(760.*isz.x, 1. - 1330.*isz.y), 5.).a;
       for (int ti = 0; ti < 2; ti++) {
         vec4 tf = ti == 0 ? par : par2;
+        float hgU = (tf.y + 45. - q.y)/tf.z;                  // incluye el pie de la mata (su sombra en la arena)
         float hg = clamp((tf.y - q.y)/tf.z, 0., 1.);
         float bx = abs(q.x - tf.x - hg*tf.z*0.45);
-        tw_ = max(tw_, smoothstep(0., 0.18, hg) * (1. - smoothstep(tf.w*0.65, tf.w*1.5, bx)));
+        float w_ = smoothstep(0., 0.1, hgU) * (1. - smoothstep(tf.w*0.8, tf.w*1.7, bx));
+        float best = 9., pick = Lref;
+        for (int k = 0; k < 3; k++) {
+          float ox = ti == 0 ? (k == 0 ? -520. : k == 1 ? -760. : -900.) : (k == 0 ? 390. : k == 1 ? 560. : 700.);
+          float sv = texture(uPhoto, vec2((q.x + ox)*isz.x, 1. - q.y*isz.y)).a;
+          float d = abs(sv - Lref) + (sv < Lref - 0.12 ? 1. : 0.);
+          if (d < best) { best = d; pick = sv; }
+        }
+        if (w_ > tw_) { tw_ = w_; Ls = pick; }
       }
-      float dk2 = 1. - smoothstep(0.22, 0.55, L0);
-      float th2 = 0.15 + 0.7*texture(uNoise, q/vec2(19., 19.)/6.).g + 0.15*hashI(ivec2(q*0.5), 33u);
-      float gone = smoothstep(th2 - 0.05, th2 + 0.05, par3.x*(0.6 + 0.6*max(hgRel(par, q), hgRel(par2, q))));
-      // Muestreo continuo de arena cercana: evita mosaicos de bloques y bordes de recorte.
-      float Ls = texture(uPhoto, vec2((840. + 80.*texture(uNoise,q/220.).g)*isz.x, 1. - (1350. + 160.*texture(uNoise,q/310.).a)*isz.y)).a;
-      Ll = mix(Ll, Ls*0.97, tw_*dk2*gone*0.9);
+      // las hebras oscuras se van por granos; al final no queda mancha: sólo arena
+      float dk2 = max(1. - smoothstep(0.30, 0.62, L0), smoothstep(0.9, 1.0, par3.x));
+      // las puntas se van primero y la mata adelgaza hacia la base (grumos de 6–20 px, no un moteado fino)
+      float th2 = 0.15 + 0.55*texture(uNoise, q/vec2(34., 34.)/6.).g + 0.1*texture(uNoise, q/vec2(9., 9.)/6.).a;
+      float gone = smoothstep(th2 - 0.06, th2 + 0.06, par3.x*(0.45 + 1.1*max(hgRel(par, q), hgRel(par2, q))));
+      gone = max(gone, smoothstep(0.93, 1.0, par3.x));
+      Ll = mix(Ll, Ls*lightMul*0.985, tw_*dk2*gone);
     }
   }`, post: `` };
 

@@ -339,6 +339,18 @@ C.lowGain = 1.22; C.surgeLow = 0.3;
 C.prints.find((p) => p.id === 'aerea').fx.flow = 6.5;
 C.prints.find((p) => p.id === 'canal').fx.swash = 32;
 
+// Portezuelo: los sellos de la postal («R. O. DEL U.» y el sello redondo) se reemplazan por cielo limpio clonado de abajo/al costado,
+// hasta el borde superior, para que ninguna inscripción aparezca con el empuje o el paralaje de cámara.
+C.photoSpec.rinconada.patches = [[2400, 0, 440, 62, 12, 2400, 66, 1], [2380, 0, 120, 40, 10, 2380, 70, 1], [2760, 190, 270, 270, 16, 2480, 190]];
+// Coda: la mata se deshace en granos que el viento arrastra; al terminar sólo queda arena (sin mancha gris)
+C.prints.find((p) => p.id === 'playa').fx.erode = { t0: 139.2, t1: 150.6, max: 1 };
+C.shed.push({ print: 'playa', mode: 'dark', t0: 139.2, t1: 156.0, fadeEnd: 1.8, region: [760, 960, 1760, 1600], cell: 6, lumMax: 0.3, wind: [1, -0.1], turn: 40,
+  bursts: [[142.0, 4], [144.6, 4], [146.5, 4], [148.5, 4], [150.0, 3]], cluster: 60, perCluster: 18, trickle: 900, size: [5, 9], speed: [38, 80], reach: [200, 360], life: [2.6, 5],
+  fan: 0.55, swirl: [1, 3], turnPx: 60, pale: 0.6, darken: 0.6, Lmin: 0.10, Lmax: 0.24, seedOff: 7 });
+C.shed.push({ print: 'playa', mode: 'dark', t0: 140.0, t1: 156.0, fadeEnd: 1.8, region: [200, 1420, 560, 1810], cell: 6, lumMax: 0.3, wind: [1, -0.12], turn: 40,
+  bursts: [[145.2, 3], [148.0, 3]], cluster: 45, perCluster: 14, trickle: 300, size: [5, 8], speed: [34, 70], reach: [160, 300], life: [2.6, 5],
+  fan: 0.5, swirl: [1, 3], turnPx: 50, pale: 0.6, darken: 0.6, Lmin: 0.10, Lmax: 0.24, seedOff: 11 });
+
 // grupos que caminan: la marcha articulada reemplaza el vaivén vertical
 Object.assign(C.groups.relieve[1], { vel: [6.3, 4.8], walk: [41.6, 50.2], bob: 0, ramp: 1.2 });
 Object.assign(C.groups.yerbal[1], { vel: [5.2, -0.3], walk: [76.6, 83.4], bob: 0, ramp: 1.2 });
