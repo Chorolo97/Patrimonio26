@@ -13,3 +13,5 @@ privado/
 versiones/revelado-cancion-v2/plates/*.jpg
 versiones/revelado-cancion-v2/plates/*.png
 versiones/revelado-cancion-v2/plates/__pycache__/
+# V2: sustitutos grises solo para desarrollo (no son las matrices reales).
+versiones/revelado-cancion-v2/plates/_dev/

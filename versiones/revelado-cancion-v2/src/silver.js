@@ -1,6 +1,6 @@
 /* Fragmento fotográfico: granito, luego arena. Puntos de plata deterministas. */
 window.createSilverFragment = async function(cfg) {
- const image = await PBS.loadImage(cfg.assets+'photos/v2/rompiente.jpg');
+ const image = await RV.loadAsset(cfg.assets+'photos/v2/rompiente.jpg', cfg);
  const c=document.createElement('canvas');c.width=180;c.height=230;
  const g=c.getContext('2d',{willReadFrequently:true});
  g.drawImage(image,680,475,560,515,0,0,180,230);

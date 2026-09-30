@@ -1,4 +1,16 @@
 /* Revelado · canción entera — contrato: window.createReel(canvas, cfg) → Promise<{render(t), warnings, logo}>. render(t) es función pura de t. */
+/* Carga con sustituto de desarrollo: si falta photos/v2/x o plates/x y cfg.devFallback está activo, usa la copia de desarrollo y lo avisa. */
+(window.RV = window.RV || {}).loadAsset = async function (src, cfg, warnings) {
+  try { return await PBS.loadImage(src); } catch (e) {
+    const fb = cfg.devFallback; if (!fb || !fb.enabled) throw e;
+    let alt = null;
+    for (const [from, to] of fb.map) if (src.indexOf(from) >= 0) { alt = src.replace(from, to); break; }
+    if (!alt) throw e;
+    const im = await PBS.loadImage(alt);
+    if (warnings) warnings.push('SUSTITUTO DE DESARROLLO: ' + alt);
+    return im;
+  }
+};
 window.createReel = async function (canvas, cfg) {
   const warnings = [];
   const RV = window.RV;
@@ -51,9 +63,9 @@ window.createReel = async function (canvas, cfg) {
   for (const key of photoKeys) {
     let img = null;
     const psrc = cfg.photos[key].indexOf('plates/') === 0 ? cfg.photos[key] : cfg.assets + cfg.photos[key];   // placas propias (SPEC §9): dentro de la carpeta de la versión
-    try { img = await PBS.loadImage(psrc); } catch (e) { warnings.push('FALTA FOTO ' + cfg.photos[key]); }
+    try { img = await RV.loadAsset(psrc, cfg, warnings); } catch (e) { warnings.push('FALTA FOTO ' + cfg.photos[key]); }
     let mimg = null;
-    if (cfg.photoSpec[key].maskFile) { try { mimg = await PBS.loadImage(cfg.photoSpec[key].maskFile); } catch (e) { warnings.push('FALTA MÁSCARA ' + cfg.photoSpec[key].maskFile); } }
+    if (cfg.photoSpec[key].maskFile) { try { mimg = await RV.loadAsset(cfg.photoSpec[key].maskFile, cfg, warnings); } catch (e) { warnings.push('FALTA MÁSCARA ' + cfg.photoSpec[key].maskFile); } }
     lg('foto ' + key + ' cargada');
     mat[key] = RV.processPhoto(img, key, cfg, mimg);
     lg('foto ' + key + ' procesada');
